@@ -212,6 +212,15 @@ function strokesOnHole(ch, si) {
   return base + (si <= extra ? 1 : 0);
 }
 
+// "E", "-3", "+5" — with a real minus sign, not a hyphen.
+function toPar(total, par) {
+  const d = total - par;
+  if (d === 0) return "E";
+  return d < 0 ? `\u2212${Math.abs(d)}` : `+${d}`;
+}
+const parColor = (total, par) =>
+  total === par ? C.paper : total < par ? C.green : C.dim;
+
 const netOf = (gross, ch, si) =>
   gross == null ? null : gross - strokesOnHole(ch, si);
 
@@ -1426,6 +1435,8 @@ function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
   const round = cfg.rounds.find((r) => r.id === activeRound) || cfg.rounds[0];
   const { detail, course, pts } = roundPoints(round);
   const fmt = { match: "2v2 net match play", highlow: "2v2 net high-low", scramble: "2v2 scramble" }[round.format];
+  // Mid-round, compare against the par of the holes actually played.
+  const parSoFar = (holes) => course.par.slice(0, holes).reduce((a, b) => a + b, 0);
 
   return (
     <div>
@@ -1478,9 +1489,24 @@ function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
                 )}
               </div>
             </div>
-            <div style={{ fontFamily: MONO, fontWeight: 900, fontSize: 16 }}>
-              {row.done === 0 ? "—" : `${row.total}${row.star ? "*" : ""}`}
-              <span style={{ fontSize: 10, color: C.dim, marginLeft: 6 }}>{row.done}/18</span>
+            <div style={{ textAlign: "right" }}>
+              <div className="flex items-center" style={{ gap: 8, justifyContent: "flex-end" }}>
+                <span style={{ fontFamily: MONO, fontWeight: 900, fontSize: 18 }}>
+                  {row.done === 0 ? "—" : `${row.total}${row.star ? "*" : ""}`}
+                </span>
+                {row.done > 0 && (
+                  <span style={{
+                    fontFamily: MONO, fontWeight: 900, fontSize: 15,
+                    color: parColor(row.total, parSoFar(row.done)),
+                    minWidth: 32, textAlign: "right",
+                  }}>
+                    {toPar(row.total, parSoFar(row.done))}
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 10, color: C.dim, fontFamily: MONO, marginTop: 2 }}>
+                {row.done}/18 holes
+              </div>
             </div>
           </div>
         ))}
