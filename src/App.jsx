@@ -791,7 +791,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ background: C.ink, minHeight: "100vh", color: C.paper, fontFamily: DISPLAY, paddingBottom: 84 }}>
+    <div className="app-body" style={{ background: C.ink, minHeight: "100vh", color: C.paper, fontFamily: DISPLAY }}>
       <Header cfg={view} me={me} syncing={syncing} lastSync={lastSync} onSync={pull} net={net} />
 
       <div style={{ padding: 14 }}>
@@ -829,9 +829,9 @@ function EmotePopup({ popup, cfg }) {
   return (
     <div
       key={popup.key}
-      className="emote-pop"
+      className="emote-pop emote-anchor"
       style={{
-        position: "fixed", left: 12, right: 12, bottom: 92, zIndex: 50,
+        position: "fixed", left: 12, right: 12, zIndex: 50,
         background: C.panel, border: `2px solid ${TEAM_COLORS[p.team]}`,
         borderRadius: 14, padding: "12px 16px",
         display: "flex", alignItems: "center", gap: 14,
@@ -878,7 +878,7 @@ function Header({ cfg, me, syncing, lastSync, onSync, net = {} }) {
     : "Refresh";
   const tone = confirm === 1 ? C.gold : confirm === 2 ? C.red : null;
   return (
-    <div style={{ background: C.ink, borderBottom: `2px solid ${C.orange}`, padding: "14px 14px 12px" }}>
+    <div className="app-header" style={{ background: C.ink, borderBottom: `2px solid ${C.orange}`, paddingBottom: 12 }}>
       <div className="flex items-center justify-between">
         <div>
           <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em", lineHeight: 1 }}>
@@ -932,15 +932,16 @@ function TabBar({ tab, setTab }) {
     ["setup", "Setup"],
   ];
   return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: C.panel, borderTop: `1px solid ${C.line}`, display: "flex" }}>
+    <div className="tab-bar" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: C.panel, borderTop: `1px solid ${C.line}`, display: "flex" }}>
       {tabs.map(([id, label]) => (
         <button
           key={id}
           onClick={() => setTab(id)}
+          className="tab-btn"
           style={{
-            flex: 1, padding: "14px 4px 18px", background: "transparent", border: "none",
-            color: tab === id ? C.orange : C.dim, fontSize: 11, fontWeight: 800,
-            letterSpacing: "0.06em", borderTop: `2px solid ${tab === id ? C.orange : "transparent"}`,
+            flex: 1, padding: "8px 2px", background: "transparent", border: "none",
+            color: tab === id ? C.orange : C.dim, fontWeight: 800,
+            borderTop: `3px solid ${tab === id ? C.orange : "transparent"}`,
           }}
         >
           {label}
