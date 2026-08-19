@@ -21,6 +21,10 @@ const C = {
 
 const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
+/* Bump this with every change so the Connection panel shows which build
+   is actually live. */
+const APP_VERSION = "1.7 \u2014 front, back and overall matches";
+
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
   "'Helvetica Neue', 'Arial Narrow', system-ui, -apple-system, sans-serif";
@@ -212,15 +216,24 @@ function strokesOnHole(ch, si) {
   return base + (si <= extra ? 1 : 0);
 }
 
+// "E", "-3", "+5" — with a real minus sign, not a hyphen.
+function toPar(total, par) {
+  const d = total - par;
+  if (d === 0) return "E";
+  return d < 0 ? `\u2212${Math.abs(d)}` : `+${d}`;
+}
+const parColor = (total, par) =>
+  total === par ? C.paper : total < par ? C.green : C.dim;
+
 const netOf = (gross, ch, si) =>
   gross == null ? null : gross - strokesOnHole(ch, si);
 
 // Better-ball match play. Returns per-hole winner and running status.
-function runMatch(aNets, bNets, aVoid = [], bVoid = []) {
+function runMatch(aNets, bNets, aVoid = [], bVoid = [], from = 0, to = 18) {
   const holes = [];
   let diff = 0;
   let closed = null;
-  for (let i = 0; i < 18; i++) {
+  for (let i = from; i < to; i++) {
     const a = aNets[i];
     const b = bNets[i];
     if (a == null || b == null) {
@@ -236,20 +249,25 @@ function runMatch(aNets, bNets, aVoid = [], bVoid = []) {
     holes.push(w);
     if (w === "a") diff += 1;
     if (w === "b") diff -= 1;
-    const left = 17 - i;
+    const left = to - 1 - i;
     if (closed === null && Math.abs(diff) > left) {
       closed = { diff, upBy: Math.abs(diff), left, hole: i + 1 };
     }
   }
   const played = holes.filter((h) => h !== null).length;
-  return { holes, diff, played, closed, complete: closed !== null || played === 18 };
+  const span = to - from;
+  return {
+    holes, diff, played, closed, from, to, span,
+    complete: closed !== null || played === span,
+    decided: closed !== null || (played === span && diff !== 0),
+  };
 }
 
 // High-low: two points per hole — one for best ball, one for worst ball.
-function runHighLow(aNets, bNets, aNets2, bNets2, voids = []) {
+function runHighLow(aNets, bNets, aNets2, bNets2, voids = [], from = 0, to = 18) {
   const holes = [];
   let diff = 0;
-  for (let i = 0; i < 18; i++) {
+  for (let i = from; i < to; i++) {
     const A = [aNets[i], aNets2[i]].filter((v) => v != null);
     const B = [bNets[i], bNets2[i]].filter((v) => v != null);
     if (A.length < 2 || B.length < 2) {
@@ -269,7 +287,12 @@ function runHighLow(aNets, bNets, aNets2, bNets2, voids = []) {
     holes.push(pts > 0 ? "a" : pts < 0 ? "b" : "h");
   }
   const played = holes.filter((h) => h !== null).length;
-  return { holes, diff, played, closed: null, complete: played === 18 };
+  const span = to - from;
+  return {
+    holes, diff, played, closed: null, from, to, span,
+    complete: played === span,
+    decided: played === span && diff !== 0,
+  };
 }
 
 /* ============================================================
@@ -298,7 +321,9 @@ const DEFAULT_CONFIG = {
     wolfcreek: [[0, 2], [1, 3]],
     innisfail: [[0, 3], [1, 2]],
   },
-  points: { matchWin: 3, aggregateWin: 3, beersbeeWin: 1, bocce: [3, 2, 1, 0], beanbagPerShot: 1 },
+  // Each pairing plays three matches a day — front, back and overall — so
+  // a pairing is still worth 3, and a course is still worth 9.
+  points: { matchWin: 1, nineWin: 1, aggregateWin: 3, beersbeeWin: 1, bocce: [3, 2, 1, 0], beanbagPerShot: 1 },
   scrambleAllowance: [0.7, 0.3],
 };
 
@@ -402,11 +427,14 @@ function Panel({ children, style }) {
 
 /* The signature element: the match tape. 18 cells that fill in as holes
    are entered, colored by which team took the hole. */
-function MatchTape({ result, colorA, colorB, current }) {
+function MatchTape({ result, colorA, colorB, current, muted }) {
+  const from = result.from || 0;
+  const span = result.span || 18;
   return (
     <div className="flex" style={{ gap: 2 }}>
-      {Array.from({ length: 18 }, (_, i) => {
-        const w = result.holes[i];
+      {Array.from({ length: span }, (_, k) => {
+        const i = from + k;          // real hole number for the label
+        const w = result.holes[k];   // results are indexed from the range start
         const bg =
           w === "a" ? colorA : w === "b" ? colorB : w === "h" ? C.line : "transparent";
         const isVoid = w === "v";
@@ -417,10 +445,10 @@ function MatchTape({ result, colorA, colorB, current }) {
               flex: 1,
               height: 22,
               background: isVoid ? "transparent" : bg,
-              border: `1px ${isVoid ? "dashed" : "solid"} ${current === i ? C.paper : C.line}`,
+              border: `1px ${isVoid ? "dashed" : "solid"} ${current === i ? C.paper : muted ? "rgba(0,0,0,0.25)" : C.line}`,
               borderRadius: 2,
               fontSize: 8,
-              color: isVoid ? C.dim : w ? C.ink : C.dim,
+              color: isVoid ? C.dim : w ? C.ink : muted ? "rgba(0,0,0,0.55)" : C.dim,
               fontFamily: MONO,
               display: "flex",
               alignItems: "center",
@@ -479,7 +507,16 @@ export default function App() {
     ];
     const all = await store.getMany(keys);
     const c = all[K.config];
-    if (c) setCfg((prev) => ({ ...prev, ...c }));
+    if (c) {
+      const points = { ...DEFAULT_CONFIG.points, ...(c.points || {}) };
+      // A config saved before front/back matches existed put all 3 points on
+      // the overall. Spread it across the three so a course still totals 9.
+      if (c.points && c.points.nineWin === undefined) {
+        points.matchWin = 1;
+        points.nineWin = 1;
+      }
+      setCfg((prev) => ({ ...prev, ...c, points }));
+    }
     const sc = {};
     for (const p of (c || DEFAULT_CONFIG).players) {
       const v = all[K.scores(p.id)];
@@ -713,32 +750,39 @@ export default function App() {
       // Direct 2v2
       const pairs = cfg.matchups[round.id] || [];
       for (const [ta, tb] of pairs) {
-        let res;
+        // Build the four score lines once, then read three ranges off them.
+        let seg;
         if (round.format === "scramble") {
           const A = teamScrambleNets(ta, round.id, course);
           const B = teamScrambleNets(tb, round.id, course);
-          res = runMatch(A.nets, B.nets, A.voids, B.voids);
+          seg = (f, t2) => runMatch(A.nets, B.nets, A.voids, B.voids, f, t2);
         } else if (round.format === "highlow") {
           const [a1, a2] = teamPlayers(ta), [b1, b2] = teamPlayers(tb);
           const vx = [a1, a2, b1, b2].map((p) => xsFor(p.id, round.id));
           const voids = Array.from({ length: 18 }, (_, i) => vx.some((v) => v[i]));
-          res = runHighLow(
-            netsFor(a1.id, round.id, course), netsFor(b1.id, round.id, course),
-            netsFor(a2.id, round.id, course), netsFor(b2.id, round.id, course),
-            voids
-          );
+          const an1 = netsFor(a1.id, round.id, course), bn1 = netsFor(b1.id, round.id, course);
+          const an2 = netsFor(a2.id, round.id, course), bn2 = netsFor(b2.id, round.id, course);
+          seg = (f, t2) => runHighLow(an1, bn1, an2, bn2, voids, f, t2);
         } else {
           const A = teamNetsBestBall(ta, round.id, course);
           const B = teamNetsBestBall(tb, round.id, course);
-          res = runMatch(A.nets, B.nets, A.voids, B.voids);
+          seg = (f, t2) => runMatch(A.nets, B.nets, A.voids, B.voids, f, t2);
         }
-        detail.matches.push({ ta, tb, res });
-        if (res.complete || res.played === 18) {
-          const w = cfg.points.matchWin;
-          if (res.diff > 0) pts[ta] += w;
-          else if (res.diff < 0) pts[tb] += w;
-          else { pts[ta] += w / 2; pts[tb] += w / 2; }
-        }
+
+        const overall = seg(0, 18);
+        const front = seg(0, 9);
+        const back = seg(9, 18);
+        detail.matches.push({ ta, tb, overall, front, back });
+
+        const award = (res, worth) => {
+          if (!res.complete) return;
+          if (res.diff > 0) pts[ta] += worth;
+          else if (res.diff < 0) pts[tb] += worth;
+          else { pts[ta] += worth / 2; pts[tb] += worth / 2; }
+        };
+        award(overall, cfg.points.matchWin);
+        award(front, cfg.points.nineWin);
+        award(back, cfg.points.nineWin);
       }
 
       // Group: four-team net aggregate (or net scramble score at Innisfail)
@@ -748,17 +792,23 @@ export default function App() {
           const done = nets.filter((v) => v != null).length;
           return { t, total: nets.reduce((s, v) => s + (v || 0), 0), done, star: voids.some(Boolean) };
         }
-        const [p1, p2] = teamPlayers(t);
-        const a = netsFor(p1.id, round.id, course);
-        const b = netsFor(p2.id, round.id, course);
-        const done = Math.min(a.filter((v) => v != null).length, b.filter((v) => v != null).length);
-        const star = xsFor(p1.id, round.id).some(Boolean) || xsFor(p2.id, round.id).some(Boolean);
-        return {
-          t,
-          total: a.reduce((s, v) => s + (v || 0), 0) + b.reduce((s, v) => s + (v || 0), 0),
-          done,
-          star,
-        };
+        // Sundre and Wolf Creek: the team is carried by whichever partner
+        // posts the lower net round. Partners are not added together.
+        const cards = teamPlayers(t).map((p) => {
+          const nets = netsFor(p.id, round.id, course);
+          return {
+            p,
+            done: nets.filter((v) => v != null).length,
+            total: nets.reduce((s, v) => s + (v || 0), 0),
+            star: xsFor(p.id, round.id).some(Boolean),
+          };
+        });
+        // Only compare cards that are equally far along, or a half-finished
+        // round would look like the lowest score on the board.
+        const furthest = Math.max(...cards.map((c) => c.done));
+        const level = cards.filter((c) => c.done === furthest);
+        const best = level.reduce((lo, c) => (c.total < lo.total ? c : lo), level[0]);
+        return { t, total: best.total, done: furthest, star: best.star, by: best.p.name };
       });
       detail.aggregate = [...totals].sort((x, y) => x.total - y.total);
       const allDone = totals.every((x) => x.done === 18);
@@ -1381,107 +1431,85 @@ function EmoteBar({ cfg, feed, open, setOpen, onSend, onRemove }) {
 
 function LiveMatch({ cfg, round, course, ta, tb, hole, netsFor, xsFor, teamNetsBestBall, teamScrambleNets }) {
   const teamP = (t) => cfg.players.filter((p) => p.team === t);
-  let res;
+  let seg;
   if (round.format === "scramble") {
     const A = teamScrambleNets(ta, round.id, course), B = teamScrambleNets(tb, round.id, course);
-    res = runMatch(A.nets, B.nets, A.voids, B.voids);
+    seg = (f, t2) => runMatch(A.nets, B.nets, A.voids, B.voids, f, t2);
   } else if (round.format === "highlow") {
     const [a1, a2] = teamP(ta), [b1, b2] = teamP(tb);
     const vx = [a1, a2, b1, b2].map((p) => xsFor(p.id, round.id));
     const voids = Array.from({ length: 18 }, (_, i) => vx.some((v) => v[i]));
-    res = runHighLow(netsFor(a1.id, round.id, course), netsFor(b1.id, round.id, course), netsFor(a2.id, round.id, course), netsFor(b2.id, round.id, course), voids);
+    const an1 = netsFor(a1.id, round.id, course), bn1 = netsFor(b1.id, round.id, course);
+    const an2 = netsFor(a2.id, round.id, course), bn2 = netsFor(b2.id, round.id, course);
+    seg = (f, t2) => runHighLow(an1, bn1, an2, bn2, voids, f, t2);
   } else {
     const A = teamNetsBestBall(ta, round.id, course), B = teamNetsBestBall(tb, round.id, course);
-    res = runMatch(A.nets, B.nets, A.voids, B.voids);
+    seg = (f, t2) => runMatch(A.nets, B.nets, A.voids, B.voids, f, t2);
   }
+  const overall = seg(0, 18);
+  const m = { ta, tb };
+
   return (
     <Panel style={{ marginTop: 16 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
         <Eyebrow color={C.dim}>Your match</Eyebrow>
-        <div style={{ fontSize: 14, fontWeight: 900, color: res.diff > 0 ? TEAM_COLORS[ta] : res.diff < 0 ? TEAM_COLORS[tb] : C.paper }}>
-          {statusText(res, cfg.teams[ta], cfg.teams[tb])}
+        <div style={{ fontSize: 14, fontWeight: 900, color: overall.diff > 0 ? TEAM_COLORS[ta] : overall.diff < 0 ? TEAM_COLORS[tb] : C.paper }}>
+          {statusText(overall, cfg.teams[ta], cfg.teams[tb])}
         </div>
       </div>
-      <MatchTape result={res} colorA={TEAM_COLORS[ta]} colorB={TEAM_COLORS[tb]} current={hole} />
+      <MatchTape result={overall} colorA={TEAM_COLORS[ta]} colorB={TEAM_COLORS[tb]} current={hole} />
+      <div className="flex" style={{ gap: 8, marginTop: 10 }}>
+        <NineBox label="FRONT" res={seg(0, 9)} m={m} cfg={cfg} worth={cfg.points.nineWin} />
+        <NineBox label="BACK" res={seg(9, 18)} m={m} cfg={cfg} worth={cfg.points.nineWin} />
+      </div>
       <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, color: C.dim }}>
         <span style={{ color: TEAM_COLORS[ta], fontWeight: 800 }}>{cfg.teams[ta]}</span>
-        <span>{res.played} of 18 in</span>
+        <span>{overall.played} of 18 in</span>
         <span style={{ color: TEAM_COLORS[tb], fontWeight: 800 }}>{cfg.teams[tb]}</span>
       </div>
     </Panel>
   );
 }
 
-/* ============================================================
-   MATCHES BOARD
-   ============================================================ */
-
-function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
-  const round = cfg.rounds.find((r) => r.id === activeRound) || cfg.rounds[0];
-  const { detail, course, pts } = roundPoints(round);
-  const fmt = { match: "2v2 net match play", highlow: "2v2 net high-low", scramble: "2v2 scramble" }[round.format];
+/* Front and back share the row. Once a nine can't be caught, the whole
+   box goes the winner's colour. */
+function NineBox({ label, res, m, cfg, worth }) {
+  const won = res.decided ? (res.diff > 0 ? m.ta : m.tb) : null;
+  const halved = res.complete && res.diff === 0;
+  const bg = won != null ? TEAM_COLORS[won] : halved ? C.panel2 : "transparent";
+  const fg = won != null ? C.ink : C.paper;
 
   return (
-    <div>
-      <div className="flex" style={{ gap: 6, marginBottom: 14 }}>
-        {cfg.rounds.map((r) => (
-          <Btn key={r.id} active={r.id === round.id} onClick={() => setActiveRound(r.id)} style={{ flex: 1, padding: "8px 4px", fontSize: 12 }}>
-            {r.label}
-          </Btn>
-        ))}
+    <div style={{
+      flex: 1, minWidth: 0, background: bg,
+      border: `1px solid ${won != null ? bg : C.line}`,
+      borderRadius: 10, padding: 8,
+    }}>
+      <div className="flex items-center justify-between"
+        style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", marginBottom: 4, color: won != null ? "rgba(0,0,0,0.6)" : C.dim }}>
+        <span>{label}</span>
+        <span>{worth} PT</span>
       </div>
-
-      <div style={{ fontSize: 11, color: C.dim, marginBottom: 12 }}>
-        {course.name} · {fmt} · rating {course.rating}/{course.slope}
+      <MatchTape
+        result={res} muted={won != null}
+        colorA={won != null ? "rgba(0,0,0,0.35)" : TEAM_COLORS[m.ta]}
+        colorB={won != null ? "rgba(0,0,0,0.35)" : TEAM_COLORS[m.tb]}
+        current={-1}
+      />
+      <div style={{ fontSize: 11, fontWeight: 800, marginTop: 6, color: fg, lineHeight: 1.3 }}>
+        {res.played === 0
+          ? "Not started"
+          : won != null
+          ? `${cfg.teams[won]} ${res.closed ? `${res.closed.upBy}&${res.closed.left}` : `by ${Math.abs(res.diff)}`}`
+          : halved
+          ? "Halved"
+          : res.diff === 0
+          ? "All square"
+          : `${cfg.teams[res.diff > 0 ? m.ta : m.tb]} ${Math.abs(res.diff)} up`}
       </div>
-
-      <Eyebrow>Direct matches — {cfg.points.matchWin} pts each</Eyebrow>
-      {detail.matches.map((m, i) => (
-        <Panel key={i} style={{ marginBottom: 10 }}>
-          <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-            <span style={{ fontWeight: 900, fontSize: 14 }}>
-              <span style={{ color: TEAM_COLORS[m.ta] }}>{cfg.teams[m.ta]}</span>
-              <span style={{ color: C.dim }}> v </span>
-              <span style={{ color: TEAM_COLORS[m.tb] }}>{cfg.teams[m.tb]}</span>
-            </span>
-            <span style={{ fontSize: 13, fontWeight: 800 }}>{statusText(m.res, cfg.teams[m.ta], cfg.teams[m.tb])}</span>
-          </div>
-          <MatchTape result={m.res} colorA={TEAM_COLORS[m.ta]} colorB={TEAM_COLORS[m.tb]} current={-1} />
-        </Panel>
-      ))}
-
-      <Eyebrow>Four-team net aggregate — {cfg.points.aggregateWin} pts to lowest</Eyebrow>
-      <Panel>
-        {detail.aggregate.map((row, i) => (
-          <div key={row.t} className="flex items-center justify-between" style={{ padding: "8px 0", borderBottom: i < 3 ? `1px solid ${C.line}` : "none" }}>
-            <div className="flex items-center" style={{ gap: 10 }}>
-              <span style={{ fontFamily: MONO, color: C.dim, fontSize: 12 }}>{i + 1}</span>
-              <span style={{ color: TEAM_COLORS[row.t], fontWeight: 800, fontSize: 14 }}>{cfg.teams[row.t]}</span>
-            </div>
-            <div style={{ fontFamily: MONO, fontWeight: 900, fontSize: 16 }}>
-              {row.done === 0 ? "—" : `${row.total}${row.star ? "*" : ""}`}
-              <span style={{ fontSize: 10, color: C.dim, marginLeft: 6 }}>{row.done}/18</span>
-            </div>
-          </div>
-        ))}
-      </Panel>
-
-      <Eyebrow color={C.orange}>Points from this course</Eyebrow>
-      <Panel>
-        {pts.map((p, t) => (
-          <div key={t} className="flex items-center justify-between" style={{ padding: "6px 0" }}>
-            <span style={{ color: TEAM_COLORS[t], fontWeight: 800, fontSize: 13 }}>{cfg.teams[t]}</span>
-            <span style={{ fontFamily: MONO, fontWeight: 900 }}>{p}</span>
-          </div>
-        ))}
-      </Panel>
     </div>
   );
 }
-
-/* ============================================================
-   GAMES
-   ============================================================ */
 
 function GamesTab({ cfg, games, saveGames }) {
   const setBeersbee = (i, side) => {
@@ -1777,6 +1805,9 @@ function ConnectionPanel() {
       <Btn onClick={run} disabled={busy} style={{ width: "100%" }}>
         {busy ? "Testing\u2026" : "Test again"}
       </Btn>
+      <div style={{ fontSize: 10, color: C.dim, fontFamily: MONO, marginTop: 10, textAlign: "center" }}>
+        Build {APP_VERSION}
+      </div>
     </Panel>
   );
 }
@@ -2005,7 +2036,8 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor, resetData }) {
       <Section id="points" title="Points" open={open} setOpen={setOpen}>
         <Panel>
           {[
-            ["matchWin", "Win a direct 2v2 match"],
+            ["matchWin", "Win the overall 18-hole match"],
+            ["nineWin", "Win a nine (front or back)"],
             ["aggregateWin", "Lowest four-team net aggregate"],
             ["beersbeeWin", "Win a beersbee match"],
             ["beanbagPerShot", "Bean bag — per made shot"],
@@ -2018,9 +2050,10 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor, resetData }) {
             </div>
           ))}
           <div style={{ fontSize: 11, color: C.dim, marginTop: 10, lineHeight: 1.55 }}>
-            Defaults reverse-engineered from your card: 3 pts a match × 2 matches + 3 pts for the
-            aggregate = 9 a course, 27 across three courses. Beersbee 6, bocce 6, bean bag 1 = 13.
-            A team's ceiling is 6 + 6 + 6 + 3 + 3 + 1 = 25.
+            Each pairing plays three matches a day — front, back and overall — at 1 pt
+            each, so a pairing is worth 3 and the two pairings are worth 6. Add 3 for
+            the low net round and a course is 9, or 27 across all three. Beersbee 6,
+            bocce 6, bean bag 1 = 13. A team's ceiling is still 25.
           </div>
         </Panel>
       </Section>
