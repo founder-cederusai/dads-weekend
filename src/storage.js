@@ -163,6 +163,23 @@ export async function testConnection() {
   }
 }
 
+/* Purely local, per-phone scratch — where this player left off. */
+export function getLocal(key, fallback = null) {
+  try {
+    const v = localStorage.getItem(key);
+    return v == null ? fallback : JSON.parse(v);
+  } catch {
+    return fallback;
+  }
+}
+export function setLocal(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* ignore */
+  }
+}
+
 /* Purely local — which player is on this phone. */
 export function getMe() {
   try {
