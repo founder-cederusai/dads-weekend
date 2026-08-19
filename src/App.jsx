@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "2.4 \u2014 scorecard view + both matches";
+const APP_VERSION = "2.5 \u2014 scorecard view + both matches";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -529,7 +529,6 @@ export default function App() {
   const [me, setMe] = useState(null);
   // Confirmed for THIS launch. A remembered name is only a default — every
   // start goes through the picker so nobody ends up posting as a mate.
-  const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [tab, setTab] = useState("play");
   const [activeRound, setActiveRoundRaw] = useState(() => store.getLocal("dw26:round", "sundre"));
   // Where this phone left off, per round. Local only — everyone plays at
@@ -979,18 +978,18 @@ export default function App() {
 
   return (
     <div className="app-body" style={{ background: C.ink, minHeight: "100vh", color: C.paper, fontFamily: DISPLAY }}>
-      <Header cfg={view} me={identityConfirmed ? me : null}
-        setMe={(v) => { setMe(v); store.setMe(v); setIdentityConfirmed(true); }}
+      <Header cfg={view} me={me}
+        setMe={(v) => { setMe(v); store.setMe(v); }}
         syncing={syncing} lastSync={lastSync} onSync={pull} net={net}
-        tab={tab} setTab={setTab} />
+        setupOpen={tab === "setup"}
+        onSetup={() => setTab(tab === "setup" ? "play" : "setup")} />
 
       <div style={{ padding: 14 }}>
         {tab === "play" && (
           <PlayTab
             cfg={view} round={round} setActiveRound={setActiveRound}
             course={resolveCourse(round)}
-            me={identityConfirmed ? me : null} suggested={me}
-            setMe={(v) => { setMe(v); store.setMe(v); setIdentityConfirmed(true); }}
+            me={me} setMe={(v) => { setMe(v); store.setMe(v); }}
             scores={scores} teamScores={teamScores}
             setHole={setHole} setTeamHole={setTeamHole}
             chFor={chFor} netsFor={netsFor} xsFor={xsFor}
@@ -998,11 +997,6 @@ export default function App() {
             sendEmote={sendEmote} feed={feed} removeEmote={removeEmote}
             hole={pos[round.id] ?? 0} setHolePos={setHolePos}
           />
-        )}
-        {tab === "card" && (
-          <ScorecardTab cfg={view} round={round} setActiveRound={setActiveRound}
-            course={resolveCourse(round)} me={me} scores={scores} teamScores={teamScores}
-            chFor={chFor} netsFor={netsFor} xsFor={xsFor} />
         )}
         {tab === "card" && (
           <CardTab cfg={view} round={round} setActiveRound={setActiveRound}
@@ -1116,7 +1110,7 @@ function IdentityGate({ cfg, current, onPick }) {
   );
 }
 
-function Header({ cfg, me, setMe, syncing, lastSync, onSync, net = {}, tab, setTab }) {
+function Header({ cfg, me, setMe, syncing, lastSync, onSync, net = {}, onSetup, setupOpen }) {
   const p = cfg.players.find((x) => x.id === me);
   const waiting = net.pending || 0;
   const [confirm, setConfirm] = useState(0);
@@ -1333,7 +1327,7 @@ function TabBar({ tab, setTab }) {
    ENTRY
    ============================================================ */
 
-function PlayTab({ cfg, round, setActiveRound, course, me, setMe, suggested, scores, teamScores, setHole, setTeamHole, chFor, netsFor, xsFor, teamNetsBestBall, teamScrambleNets, sendEmote, feed, removeEmote, hole, setHolePos }) {
+function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamScores, setHole, setTeamHole, chFor, netsFor, xsFor, teamNetsBestBall, teamScrambleNets, sendEmote, feed, removeEmote, hole, setHolePos }) {
   const [seat, setSeatRaw] = useState(0);
   const [seatTouched, setSeatTouched] = useState(false);
   const [emoteOpen, setEmoteOpen] = useState(false);
@@ -1342,49 +1336,8 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, suggested, sco
 
   const myPlayer = cfg.players.find((p) => p.id === me);
 
-  if (!me) {
-    const sug = cfg.players.find((p) => p.id === suggested);
-    return (
-      <div>
-        <Eyebrow>Who's on this phone?</Eyebrow>
-        {sug && (
-          <button
-            onClick={() => setMe(sug.id)}
-            style={{
-              width: "100%", background: TEAM_COLORS[sug.team], border: "none",
-              borderRadius: 12, padding: 16, color: C.ink, textAlign: "left", marginBottom: 12,
-            }}
-          >
-            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", opacity: 0.7 }}>
-              CONTINUE AS
-            </div>
-            <div style={{ fontWeight: 900, fontSize: 22, lineHeight: 1.2 }}>{sug.name}</div>
-            <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>
-              {cfg.teams[sug.team]} · index {sug.index}
-            </div>
-          </button>
-        )}
-        <div className="grid grid-cols-2" style={{ gap: 8 }}>
-          {cfg.players.filter((p) => p.id !== suggested).map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setMe(p.id)}
-              style={{ background: C.panel, border: `1px solid ${TEAM_COLORS[p.team]}`, borderRadius: 10, padding: 16, color: C.paper, textAlign: "left" }}
-            >
-              <div style={{ fontWeight: 900, fontSize: 17 }}>{p.name}</div>
-              <div style={{ fontSize: 11, color: TEAM_COLORS[p.team], fontWeight: 700 }}>
-                {cfg.teams[p.team]} · idx {p.index}
-              </div>
-            </button>
-          ))}
-        </div>
-        <div style={{ fontSize: 11, color: C.dim, marginTop: 14, lineHeight: 1.5 }}>
-          Confirm your name every time you open the app. Scores sync between phones, so
-          whoever reaches the hole first can enter it.
-        </div>
-      </div>
-    );
-  }
+  // IdentityGate runs before this screen ever mounts, so me is always set.
+  if (!myPlayer) return null;
 
   // Find the match this player is in for this round.
   const pairs = cfg.matchups[round.id] || [];
@@ -1759,15 +1712,15 @@ function LiveMatch({ cfg, round, course, ta, tb, hole, netsFor, xsFor, teamNetsB
   const m = { ta, tb };
 
   return (
-    <Panel style={{ marginTop: 16 }}>
+    <Panel style={{ marginTop: compact ? 8 : 16 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-        <Eyebrow color={C.dim}>{title || "Your match"}</Eyebrow>
+        <Eyebrow color={compact ? C.dim : C.orange}>{title || "Your match"}</Eyebrow>
         <div style={{ fontSize: compact ? 12 : 14, fontWeight: 900, color: overall.diff > 0 ? TEAM_COLORS[ta] : overall.diff < 0 ? TEAM_COLORS[tb] : C.paper }}>
           {statusText(overall, cfg.teams[ta], cfg.teams[tb])}
         </div>
       </div>
       <MatchTape result={overall} colorA={TEAM_COLORS[ta]} colorB={TEAM_COLORS[tb]} current={hole} />
-      {mine && (
+      {!compact && (
         <div className="flex" style={{ gap: 8, marginTop: 10 }}>
           <NineBox label="FRONT" res={seg(0, 9)} m={m} cfg={cfg} worth={cfg.points.nineWin} />
           <NineBox label="BACK" res={seg(9, 18)} m={m} cfg={cfg} worth={cfg.points.nineWin} />
@@ -1825,147 +1778,6 @@ function ScoreCell({ value, par, isX, size = 30 }) {
   );
 }
 
-function ScorecardTab({ cfg, round, setActiveRound, course, me, scores, teamScores, chFor, netsFor, xsFor }) {
-  const [half, setHalf] = useState("front");
-  const [mode, setMode] = useState("gross");
-
-  const myPlayer = cfg.players.find((p) => p.id === me);
-  const pairs = cfg.matchups[round.id] || [];
-  const myMatch = (myPlayer && pairs.find((pr) => pr.includes(myPlayer.team))) || pairs[0] || [0, 1];
-  const scramble = round.format === "scramble";
-
-  const rows = scramble
-    ? myMatch.map((t) => ({ key: `t${t}`, label: cfg.teams[t], team: t, isTeam: true }))
-    : myMatch.flatMap((t) =>
-        cfg.players.filter((p) => p.team === t).map((p) => ({ key: p.id, label: p.name, team: t, p }))
-      );
-
-  const from = half === "front" ? 0 : 9;
-  const to = half === "front" ? 9 : 18;
-  const holes = Array.from({ length: 9 }, (_, i) => from + i);
-
-  const cellFor = (row, i) => {
-    if (row.isTeam) {
-      const raw = ((teamScores[row.team] || {})[round.id] || [])[i];
-      const g = gv(raw);
-      if (g == null) return { v: null, x: false };
-      if (mode === "gross") return { v: g, x: gx(raw) };
-      const { teamCH } = teamScrambleTeamCH(cfg, row.team, course, chFor);
-      return { v: netOf(g, teamCH, course.si[i]), x: gx(raw) };
-    }
-    const raw = ((scores[row.p.id] || {})[round.id] || [])[i];
-    const g = gv(raw);
-    if (g == null) return { v: null, x: false };
-    if (mode === "gross") return { v: g, x: gx(raw) };
-    return { v: netOf(g, chFor(row.p, course), course.si[i]), x: gx(raw) };
-  };
-
-  const rowTotal = (row) => {
-    let sum = 0, any = false;
-    for (let i = from; i < to; i++) {
-      const c = cellFor(row, i);
-      if (c.v != null) { sum += c.v; any = true; }
-    }
-    return any ? sum : null;
-  };
-
-  const parHalf = course.par.slice(from, to).reduce((a, b) => a + b, 0);
-  const NAME_W = 58;
-  const CELL = 30;
-
-  return (
-    <div>
-      <div className="flex" style={{ gap: 6, marginBottom: 12 }}>
-        {cfg.rounds.map((r) => (
-          <Btn key={r.id} active={r.id === round.id} onClick={() => setActiveRound(r.id)}
-            style={{ flex: 1, padding: "8px 4px", fontSize: 12 }}>
-            {r.label}
-          </Btn>
-        ))}
-      </div>
-
-      <div className="flex" style={{ gap: 6, marginBottom: 12 }}>
-        <Btn active={half === "front"} onClick={() => setHalf("front")} style={{ flex: 1, fontSize: 12, padding: "8px 2px" }}>Front 9</Btn>
-        <Btn active={half === "back"} onClick={() => setHalf("back")} style={{ flex: 1, fontSize: 12, padding: "8px 2px" }}>Back 9</Btn>
-        <Btn active={mode === "gross"} onClick={() => setMode("gross")} style={{ flex: 1, fontSize: 12, padding: "8px 2px" }}>Gross</Btn>
-        <Btn active={mode === "net"} onClick={() => setMode("net")} style={{ flex: 1, fontSize: 12, padding: "8px 2px" }}>Net</Btn>
-      </div>
-
-      <Panel style={{ padding: 10, overflowX: "auto" }}>
-        {/* hole numbers */}
-        <div className="flex items-center" style={{ marginBottom: 4 }}>
-          <div style={{ width: NAME_W, flexShrink: 0, fontSize: 9, color: C.dim, fontWeight: 800, letterSpacing: "0.1em" }}>HOLE</div>
-          {holes.map((i) => (
-            <div key={i} style={{ width: CELL, textAlign: "center", fontSize: 10, color: C.dim, fontFamily: MONO, fontWeight: 800 }}>
-              {i + 1}
-            </div>
-          ))}
-          <div style={{ width: 34, textAlign: "center", fontSize: 9, color: C.dim, fontWeight: 800 }}>
-            {half === "front" ? "OUT" : "IN"}
-          </div>
-        </div>
-
-        {/* par */}
-        <div className="flex items-center" style={{ paddingBottom: 6, borderBottom: `1px solid ${C.line}` }}>
-          <div style={{ width: NAME_W, flexShrink: 0, fontSize: 10, color: C.dim, fontWeight: 800 }}>PAR</div>
-          {holes.map((i) => (
-            <div key={i} style={{ width: CELL, textAlign: "center", fontFamily: MONO, fontSize: 12, color: C.dim }}>
-              {course.par[i]}
-            </div>
-          ))}
-          <div style={{ width: 34, textAlign: "center", fontFamily: MONO, fontSize: 12, color: C.dim, fontWeight: 800 }}>
-            {parHalf}
-          </div>
-        </div>
-
-        {/* players */}
-        {rows.map((row) => {
-          const tot = rowTotal(row);
-          return (
-            <div key={row.key} className="flex items-center" style={{ padding: "5px 0", borderBottom: `1px solid ${C.line}` }}>
-              <div style={{
-                width: NAME_W, flexShrink: 0, fontSize: 12, fontWeight: 800,
-                color: TEAM_COLORS[row.team], overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              }}>
-                {row.label}
-              </div>
-              {holes.map((i) => {
-                const c = cellFor(row, i);
-                return <ScoreCell key={i} value={c.v} par={course.par[i]} isX={c.x} size={CELL} />;
-              })}
-              <div style={{ width: 34, textAlign: "center", fontFamily: MONO, fontSize: 14, fontWeight: 900 }}>
-                {tot == null ? "–" : tot}
-              </div>
-            </div>
-          );
-        })}
-
-        <div className="flex items-center" style={{ gap: 12, paddingTop: 10, flexWrap: "wrap" }}>
-          {[
-            { label: "Eagle", rel: -2 },
-            { label: "Birdie", rel: -1 },
-            { label: "Par", rel: 0 },
-            { label: "Bogey", rel: 1 },
-            { label: "Double+", rel: 2 },
-          ].map((k) => (
-            <div key={k.label} className="flex items-center" style={{ gap: 5 }}>
-              <ScoreCell value={4 + k.rel} par={4} size={24} />
-              <span style={{ fontSize: 9, color: C.dim, fontWeight: 700 }}>{k.label}</span>
-            </div>
-          ))}
-        </div>
-      </Panel>
-
-      <div style={{ fontSize: 11, color: C.dim, marginTop: 10, lineHeight: 1.5 }}>
-        {scramble ? "Scramble — one card per team." : "Your match only."} An asterisk is a
-        pickup. {mode === "net" ? "Net applies each player's strokes by hole index." : "Gross is what you actually shot."}
-      </div>
-    </div>
-  );
-}
-
-/* Traditional scorecard notation: circle a birdie, double-circle an eagle,
-   square a bogey, double-square a double or worse. */
 function ScoreMark({ gross, par, picked, stroke, dim }) {
   if (gross == null) {
     return <span style={{ color: C.line, fontFamily: MONO, fontSize: 14 }}>–</span>;
