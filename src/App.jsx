@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "2.1 \u2014 remembers your place";
+const APP_VERSION = "2.2 \u2014 remembers your place";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -596,21 +596,6 @@ export default function App() {
     })();
   }, [pull]);
 
-  // Once scores are in, park each round on the first hole still to play
-  // unless this phone already has a saved spot.
-  useEffect(() => {
-    if (loading || resumed || !me) return;
-    setResumed(true);
-    setPos((prev) => {
-      const next = { ...prev };
-      for (const r of cfg.rounds) {
-        if (next[r.id] == null) next[r.id] = firstOpenHole(r.id);
-      }
-      store.setLocal("dw26:pos", next);
-      return next;
-    });
-  }, [loading, resumed, me, cfg.rounds, firstOpenHole]);
-
   // Live push from the other phones.
   useEffect(() => store.subscribe(() => pull()), [pull]);
 
@@ -737,6 +722,21 @@ export default function App() {
     },
     [cfg.rounds, cfg.players, scores, teamScores, me]
   );
+
+  // Once scores are in, park each round on the first hole still to play
+  // unless this phone already has a saved spot.
+  useEffect(() => {
+    if (loading || resumed || !me) return;
+    setResumed(true);
+    setPos((prev) => {
+      const next = { ...prev };
+      for (const r of cfg.rounds) {
+        if (next[r.id] == null) next[r.id] = firstOpenHole(r.id);
+      }
+      store.setLocal("dw26:pos", next);
+      return next;
+    });
+  }, [loading, resumed, me, cfg.rounds, firstOpenHole]);
 
   const setHolePos = useCallback((roundId, hole) => {
     setPos((prev) => {
