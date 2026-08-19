@@ -1539,6 +1539,57 @@ function StandingsTab({ cfg, standings, feed = [] }) {
    SETUP
    ============================================================ */
 
+/* Defined at module scope on purpose. Declaring this inside SetupTab gave
+   it a new identity every render, so React remounted the whole panel on
+   each keystroke and the keyboard closed. */
+function Section({ id, title, open, setOpen, children }) {
+  const isOpen = open === id;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <button
+        onClick={() => setOpen(isOpen ? "" : id)}
+        style={{ width: "100%", textAlign: "left", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: 14, color: C.paper, fontWeight: 800, fontSize: 14 }}
+      >
+        {title} <span style={{ float: "right", color: C.dim }}>{isOpen ? "\u2212" : "+"}</span>
+      </button>
+      {isOpen && <div style={{ padding: "12px 2px" }}>{children}</div>}
+    </div>
+  );
+}
+
+/* Text fields keep their own draft so typing never waits on the network.
+   The change is pushed once you pause or move on. */
+function DraftInput({ value, onCommit, style, ...rest }) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+  const timer = useRef(null);
+
+  useEffect(() => {
+    if (!focused.current) setDraft(value);
+  }, [value]);
+
+  const change = (v) => {
+    setDraft(v);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => onCommit(v), 600);
+  };
+
+  return (
+    <input
+      {...rest}
+      value={draft}
+      onChange={(e) => change(e.target.value)}
+      onFocus={() => { focused.current = true; }}
+      onBlur={() => {
+        focused.current = false;
+        clearTimeout(timer.current);
+        onCommit(draft);
+      }}
+      style={style}
+    />
+  );
+}
+
 function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
   const [open, setOpen] = useState("courses");
   const upd = (patch) => saveConfig({ ...cfg, ...patch });
@@ -1546,19 +1597,9 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
   const setRound = (id, patch) =>
     upd({ rounds: cfg.rounds.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
 
-  const Section = ({ id, title, children }) => (
-    <div style={{ marginBottom: 12 }}>
-      <button onClick={() => setOpen(open === id ? "" : id)}
-        style={{ width: "100%", textAlign: "left", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: 14, color: C.paper, fontWeight: 800, fontSize: 14 }}>
-        {title} <span style={{ float: "right", color: C.dim }}>{open === id ? "−" : "+"}</span>
-      </button>
-      {open === id && <div style={{ padding: "12px 2px" }}>{children}</div>}
-    </div>
-  );
-
   return (
     <div>
-      <Section id="courses" title="Courses & tees">
+      <Section id="courses" title="Courses & tees" open={open} setOpen={setOpen}>
         {cfg.rounds.map((r) => {
           const course = resolveCourse(r);
           return (
@@ -1601,18 +1642,20 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
         })}
       </Section>
 
-      <Section id="teams" title="Team names">
+      <Section id="teams" title="Team names" open={open} setOpen={setOpen}>
         {[0, 1, 2, 3].map((t) => (
           <Panel key={t} style={{ marginBottom: 8 }}>
             <div className="flex items-center" style={{ gap: 10 }}>
               <div style={{ width: 6, alignSelf: "stretch", background: TEAM_COLORS[t], borderRadius: 3, minHeight: 40 }} />
               <div style={{ flex: 1 }}>
-                <input
+                <DraftInput
                   value={cfg.teams[t]}
                   maxLength={16}
                   placeholder={`Team ${t + 1}`}
-                  onChange={(e) =>
-                    upd({ teams: cfg.teams.map((n, i) => (i === t ? e.target.value : n)) })
+                  autoCapitalize="words"
+                  autoCorrect="off"
+                  onCommit={(v) =>
+                    upd({ teams: cfg.teams.map((n, i) => (i === t ? v : n)) })
                   }
                   style={{
                     width: "100%", background: C.panel2, border: `1px solid ${C.line}`,
@@ -1633,7 +1676,7 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
         </div>
       </Section>
 
-      <Section id="handicaps" title="Players & course handicaps">
+      <Section id="handicaps" title="Players & course handicaps" open={open} setOpen={setOpen}>
         {cfg.players.map((p) => (
           <Panel key={p.id} style={{ marginBottom: 8 }}>
             <div className="flex items-center justify-between">
@@ -1643,9 +1686,9 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
               </div>
               <div className="flex items-center" style={{ gap: 8 }}>
                 <span style={{ fontSize: 10, color: C.dim }}>INDEX</span>
-                <input
-                  type="number" value={p.index}
-                  onChange={(e) => upd({ players: cfg.players.map((x) => x.id === p.id ? { ...x, index: Number(e.target.value) } : x) })}
+                <DraftInput
+                  type="number" inputMode="numeric" value={p.index}
+                  onCommit={(v) => upd({ players: cfg.players.map((x) => x.id === p.id ? { ...x, index: Number(v) || 0 } : x) })}
                   style={{ width: 56, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 6, color: C.paper, padding: "6px 8px", fontFamily: MONO, fontWeight: 800, textAlign: "center" }}
                 />
               </div>
@@ -1663,7 +1706,7 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
         </div>
       </Section>
 
-      <Section id="matchups" title="Matchups">
+      <Section id="matchups" title="Matchups" open={open} setOpen={setOpen}>
         {cfg.rounds.map((r) => (
           <Panel key={r.id} style={{ marginBottom: 8 }}>
             <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>{r.label}</div>
@@ -1691,7 +1734,7 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
         ))}
       </Section>
 
-      <Section id="points" title="Points">
+      <Section id="points" title="Points" open={open} setOpen={setOpen}>
         <Panel>
           {[
             ["matchWin", "Win a direct 2v2 match"],
@@ -1701,8 +1744,8 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
           ].map(([k, label]) => (
             <div key={k} className="flex items-center justify-between" style={{ padding: "8px 0" }}>
               <span style={{ fontSize: 13 }}>{label}</span>
-              <input type="number" step="0.5" value={cfg.points[k]}
-                onChange={(e) => upd({ points: { ...cfg.points, [k]: Number(e.target.value) } })}
+              <DraftInput type="number" inputMode="decimal" step="0.5" value={cfg.points[k]}
+                onCommit={(v) => upd({ points: { ...cfg.points, [k]: Number(v) || 0 } })}
                 style={{ width: 60, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 6, color: C.paper, padding: "6px 8px", fontFamily: MONO, fontWeight: 800, textAlign: "center" }} />
             </div>
           ))}
@@ -1714,7 +1757,7 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
         </Panel>
       </Section>
 
-      <Section id="scramble" title="Scramble allowance">
+      <Section id="scramble" title="Scramble allowance" open={open} setOpen={setOpen}>
         <Panel>
           <div style={{ fontSize: 13, marginBottom: 10 }}>
             Team handicap = {Math.round(cfg.scrambleAllowance[0] * 100)}% of the low handicap +{" "}
