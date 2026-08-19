@@ -54,14 +54,22 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 }
 
 .tab-btn {
-  min-height: 54px;
+  min-height: 60px;
   font-size: 12px;
   letter-spacing: 0.02em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
+
+/* Label reads first, icon sits under it. */
+.tab-icon { display: block; opacity: 0.9; line-height: 0; }
 
 /* Narrow phones: five labels get tight, so shrink type before wrapping. */
 @media (max-width: 360px) {
-  .tab-btn { font-size: 11px; letter-spacing: 0; }
+  .tab-btn { font-size: 11px; letter-spacing: 0; gap: 4px; }
 }
 
 .emote-anchor { bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }

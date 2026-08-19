@@ -923,6 +923,56 @@ function Header({ cfg, me, syncing, lastSync, onSync, net = {} }) {
   );
 }
 
+/* Inline SVGs so the nav costs no extra dependency. All stroke-based and
+   inherit the tab's colour. */
+function TabIcon({ name }) {
+  const common = {
+    width: 19, height: 19, viewBox: "0 0 24 24", fill: "none",
+    stroke: "currentColor", strokeWidth: 1.9,
+    strokeLinecap: "round", strokeLinejoin: "round",
+    "aria-hidden": true, focusable: false,
+  };
+  switch (name) {
+    case "play": // a scorecard grid, mid pencil stroke
+      return (
+        <svg {...common}>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M3 9h18M3 15h18M9 3v18" />
+        </svg>
+      );
+    case "board": // two pins facing off
+      return (
+        <svg {...common}>
+          <path d="M6 21V4l6 2.5L6 9" />
+          <path d="M18 21V4l-6 2.5L18 9" />
+        </svg>
+      );
+    case "games": // bocce
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="15" r="4" />
+          <circle cx="17" cy="16" r="3" />
+          <circle cx="14" cy="7" r="2" />
+        </svg>
+      );
+    case "standings": // the podium
+      return (
+        <svg {...common}>
+          <path d="M4 21v-6h5v6M9.5 21v-11h5v11M15 21v-8h5v8" />
+        </svg>
+      );
+    case "setup":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
 function TabBar({ tab, setTab }) {
   const tabs = [
     ["play", "Enter"],
@@ -944,7 +994,8 @@ function TabBar({ tab, setTab }) {
             borderTop: `3px solid ${tab === id ? C.orange : "transparent"}`,
           }}
         >
-          {label}
+          <span>{label}</span>
+          <span className="tab-icon"><TabIcon name={id} /></span>
         </button>
       ))}
     </div>
