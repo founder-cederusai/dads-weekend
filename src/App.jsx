@@ -598,6 +598,34 @@ export default function App() {
     return () => clearTimeout(t);
   }, [feed.length, feed[0] && feed[0].at]);
 
+  // Anyone can clear a reaction — it's eight guys, not a court record.
+  const removeEmote = async (pid, at) => {
+    const list = (emotes[pid] || []).filter((x) => x.at !== at);
+    setEmotes((prev) => ({ ...prev, [pid]: list }));
+    await sset(K.emotes(pid), list);
+  };
+
+  const resetData = async (what) => {
+    const doScores = what === "scores" || what === "all";
+    const doEmotes = what === "emotes" || what === "all";
+    if (doScores) {
+      for (const p of cfg.players) await sset(K.scores(p.id), {});
+      for (let t = 0; t < 4; t++) await sset(K.teamScores(t), {});
+      await sset(K.beersbee, {});
+      await sset(K.bocce, {});
+      await sset(K.beanbag, {});
+      setScores({});
+      setTeamScores({});
+      setGames({ beersbee: {}, bocce: {}, beanbag: {} });
+    }
+    if (doEmotes) {
+      for (const p of cfg.players) await sset(K.emotes(p.id), []);
+      setEmotes({});
+      seenEmote.current = Date.now();
+      setPopup(null);
+    }
+  };
+
   const saveConfig = async (next) => {
     setCfg(next);
     await sset(K.config, next);
@@ -810,8 +838,13 @@ export default function App() {
           <BoardTab cfg={view} roundPoints={roundPoints} activeRound={activeRound} setActiveRound={setActiveRound} />
         )}
         {tab === "games" && <GamesTab cfg={view} games={games} saveGames={saveGames} />}
-        {tab === "standings" && <StandingsTab cfg={view} standings={standings()} feed={feed} />}
-        {tab === "setup" && <SetupTab cfg={cfg} saveConfig={saveConfig} resolveCourse={resolveCourse} chFor={chFor} />}
+        {tab === "standings" && (
+          <StandingsTab cfg={view} standings={standings()} feed={feed} removeEmote={removeEmote} />
+        )}
+        {tab === "setup" && (
+          <SetupTab cfg={cfg} saveConfig={saveConfig} resolveCourse={resolveCourse}
+            chFor={chFor} resetData={resetData} />
+        )}
       </div>
 
       <EmotePopup popup={popup} cfg={view} />
@@ -1460,7 +1493,9 @@ function GamesTab({ cfg, games, saveGames }) {
    STANDINGS
    ============================================================ */
 
-function StandingsTab({ cfg, standings, feed = [] }) {
+function StandingsTab({ cfg, standings, feed = [], removeEmote }) {
+  const [showLog, setShowLog] = useState(false);
+  const [confirmId, setConfirmId] = useState(null);
   const rows = [0, 1, 2, 3]
     .map((t) => ({ t, total: standings.total[t] }))
     .sort((a, b) => b.total - a.total);
@@ -1510,7 +1545,72 @@ function StandingsTab({ cfg, standings, feed = [] }) {
             </div>
           );
         })()}
+
+        {feed.length > 0 && (
+          <button
+            onClick={() => setShowLog(!showLog)}
+            style={{
+              marginTop: 12, width: "100%", background: C.panel2,
+              border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px",
+              color: C.paper, fontSize: 12, fontWeight: 800,
+            }}
+          >
+            {showLog ? "Hide the log" : `Show all ${feed.length} reactions`}
+          </button>
+        )}
       </Panel>
+
+      {showLog && (
+        <>
+          <Eyebrow>Every reaction, who sent it, and when</Eyebrow>
+          <Panel style={{ marginBottom: 16, padding: 10 }}>
+            {feed.map((f) => {
+              const p = cfg.players.find((x) => x.id === f.pid);
+              const em = EMOTE_BY_ID[f.e];
+              if (!p || !em) return null;
+              const rid = `${f.pid}-${f.at}`;
+              const round = cfg.rounds.find((r) => r.id === f.r);
+              const when = new Date(f.at);
+              return (
+                <div key={rid} className="flex items-center"
+                  style={{ gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.line}` }}>
+                  <span style={{ fontSize: 20 }}>{em.e}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: TEAM_COLORS[p.team] }}>
+                      {p.name}
+                      <span style={{ color: C.paper, fontWeight: 700 }}> · {em.label}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: C.dim, fontFamily: MONO, marginTop: 2 }}>
+                      {cfg.teams[p.team]}
+                      {round ? ` · ${round.label}` : ""}
+                      {f.h != null ? ` · hole ${f.h + 1}` : ""}
+                      {" · "}
+                      {when.toLocaleDateString([], { month: "short", day: "numeric" })}{" "}
+                      {when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (confirmId === rid) { removeEmote(f.pid, f.at); setConfirmId(null); }
+                      else setConfirmId(rid);
+                    }}
+                    onBlur={() => setConfirmId(null)}
+                    style={{
+                      background: confirmId === rid ? C.red : "transparent",
+                      border: `1px solid ${confirmId === rid ? C.red : C.line}`,
+                      borderRadius: 6, padding: "6px 10px",
+                      color: confirmId === rid ? C.ink : C.dim,
+                      fontSize: 11, fontWeight: 800, whiteSpace: "nowrap",
+                    }}
+                  >
+                    {confirmId === rid ? "Delete" : "\u00D7"}
+                  </button>
+                </div>
+              );
+            })}
+          </Panel>
+        </>
+      )}
 
       <Eyebrow>Where the points came from</Eyebrow>
       <Panel>
@@ -1557,6 +1657,50 @@ function Section({ id, title, open, setOpen, children }) {
   );
 }
 
+/* Nothing destructive on one tap. Same two-step as Refresh. */
+function ResetButton({ label, onConfirm, tone }) {
+  const [step, setStep] = useState(0);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (step === 0) return;
+    const t = setTimeout(() => setStep(0), 6000);
+    return () => clearTimeout(t);
+  }, [step]);
+
+  const tap = async () => {
+    if (step < 2) return setStep(step + 1);
+    setStep(0);
+    await onConfirm();
+    setDone(true);
+    setTimeout(() => setDone(false), 2500);
+  };
+
+  const bg = done ? C.green : step === 1 ? C.gold : step === 2 ? C.red : C.panel2;
+  const text = done
+    ? "Cleared"
+    : step === 1
+    ? "You sure?"
+    : step === 2
+    ? "Sure sure? This can't be undone"
+    : label;
+
+  return (
+    <button
+      onClick={tap}
+      style={{
+        width: "100%", marginBottom: 8, padding: "13px 12px", borderRadius: 10,
+        background: bg,
+        border: `1px solid ${step || done ? bg : tone || C.line}`,
+        color: step || done ? C.ink : tone || C.paper,
+        fontWeight: 800, fontSize: 13,
+      }}
+    >
+      {text}
+    </button>
+  );
+}
+
 /* Text fields keep their own draft so typing never waits on the network.
    The change is pushed once you pause or move on. */
 function DraftInput({ value, onCommit, style, ...rest }) {
@@ -1590,7 +1734,7 @@ function DraftInput({ value, onCommit, style, ...rest }) {
   );
 }
 
-function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
+function SetupTab({ cfg, saveConfig, resolveCourse, chFor, resetData }) {
   const [open, setOpen] = useState("courses");
   const upd = (patch) => saveConfig({ ...cfg, ...patch });
 
@@ -1755,6 +1899,17 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor }) {
             A team's ceiling is 6 + 6 + 6 + 3 + 3 + 1 = 25.
           </div>
         </Panel>
+      </Section>
+
+      <Section id="reset" title="Clear data" open={open} setOpen={setOpen}>
+        <div style={{ fontSize: 12, color: C.dim, lineHeight: 1.6, marginBottom: 12 }}>
+          Wipes the shared data on every phone, not just this one. Team names,
+          courses, matchups and points settings are kept. Use this once you're
+          done testing and the real thing is about to start.
+        </div>
+        <ResetButton label="Clear scores and games" onConfirm={() => resetData("scores")} />
+        <ResetButton label="Clear reactions" onConfirm={() => resetData("emotes")} />
+        <ResetButton label="Clear everything" tone={C.red} onConfirm={() => resetData("all")} />
       </Section>
 
       <Section id="scramble" title="Scramble allowance" open={open} setOpen={setOpen}>
