@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "1.8 \u2014 front, back and overall matches";
+const APP_VERSION = "2.1 \u2014 remembers your place";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -344,6 +344,45 @@ const EMOTES = [
 ];
 const EMOTE_BY_ID = Object.fromEntries(EMOTES.map((x) => [x.id, x]));
 
+/* Reactions are about somebody. Reads as a sentence either way — thrown
+   at a mate, or owned up to yourself. */
+const STORY = {
+  dog:       { at: (f, t) => `${f} dogged ${t}`,                    self: (n) => `${n} took the dog` },
+  threeputt: { at: (f, t) => `${f} called a three-putt on ${t}`,    self: (n) => `${n} three-putted` },
+  mulligan:  { at: (f, t) => `${f} granted ${t} a mulligan`,        self: (n) => `${n} took a mulligan` },
+  kp:        { at: (f, t) => `${f} gave ${t} closest to the pin`,   self: (n) => `${n} stuck it close` },
+  cry:       { at: (f, t) => `${f} is still laughing at ${t}`,      self: (n) => `${n} lost it laughing` },
+  flush:     { at: (f, t) => `${f} says ${t} flushed one`,          self: (n) => `${n} flushed one` },
+  water:     { at: (f, t) => `${f} watched ${t} find the water`,    self: (n) => `${n} found the water` },
+  sandy:     { at: (f, t) => `${f} put ${t} on the beach`,          self: (n) => `${n} found the beach` },
+  blowup:    { at: (f, t) => `${f} witnessed ${t} blow up`,         self: (n) => `${n} blew up` },
+  beer:      { at: (f, t) => `${f} says ${t} owes a beer`,          self: (n) => `${n} is owed a beer` },
+  cold:      { at: (f, t) => `${f} says ${t} has gone ice cold`,    self: (n) => `${n} has gone ice cold` },
+  greenie:   { at: (f, t) => `${f} gave ${t} the greenie`,          self: (n) => `${n} took the greenie` },
+};
+
+function narrate(emoteId, fromName, toName) {
+  const st = STORY[emoteId];
+  if (!st) return `${fromName} reacted`;
+  return fromName === toName ? st.self(fromName) : st.at(fromName, toName);
+}
+
+/* Whoever collects the most of a given reaction earns the title. */
+const AWARDS = [
+  { id: "dog", dir: "to", title: "Most Dogged", blurb: "took the most dogs" },
+  { id: "threeputt", dir: "to", title: "Snake Charmer", blurb: "three-putted the most" },
+  { id: "mulligan", dir: "to", title: "Mulligan King", blurb: "needed the most do-overs" },
+  { id: "kp", dir: "to", title: "Dart Thrower", blurb: "most closest-to-the-pins" },
+  { id: "flush", dir: "to", title: "Pure Striker", blurb: "flushed the most" },
+  { id: "water", dir: "to", title: "Deep Sea Diver", blurb: "found the most water" },
+  { id: "sandy", dir: "to", title: "Beach Bum", blurb: "spent the most time in sand" },
+  { id: "blowup", dir: "to", title: "Demolition Man", blurb: "blew up the most holes" },
+  { id: "cold", dir: "to", title: "Cold Front", blurb: "went coldest" },
+  { id: "greenie", dir: "to", title: "Greenie Machine", blurb: "took the most greenies" },
+  { id: "beer", dir: "to", title: "Tab Holder", blurb: "owes the most beers" },
+  { id: "cry", dir: "from", title: "The Heckler", blurb: "laughed hardest at everyone else" },
+];
+
 const NINE_SETS = { innisfail: INNISFAIL_NINES, wolfcreek: WOLFCREEK_NINES };
 
 const BEERSBEE_PAIRS = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
@@ -489,8 +528,12 @@ export default function App() {
   const seenEmote = useRef(0);
   const [me, setMe] = useState(null);
   const [tab, setTab] = useState("play");
-  const [activeRound, setActiveRound] = useState("sundre");
+  const [activeRound, setActiveRoundRaw] = useState(() => store.getLocal("dw26:round", "sundre"));
+  // Where this phone left off, per round. Local only — everyone plays at
+  // their own pace.
+  const [pos, setPos] = useState(() => store.getLocal("dw26:pos", {}));
   const [loading, setLoading] = useState(true);
+  const [resumed, setResumed] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [net, setNet] = useState({ pending: 0, online: true });
@@ -553,6 +596,21 @@ export default function App() {
     })();
   }, [pull]);
 
+  // Once scores are in, park each round on the first hole still to play
+  // unless this phone already has a saved spot.
+  useEffect(() => {
+    if (loading || resumed || !me) return;
+    setResumed(true);
+    setPos((prev) => {
+      const next = { ...prev };
+      for (const r of cfg.rounds) {
+        if (next[r.id] == null) next[r.id] = firstOpenHole(r.id);
+      }
+      store.setLocal("dw26:pos", next);
+      return next;
+    });
+  }, [loading, resumed, me, cfg.rounds, firstOpenHole]);
+
   // Live push from the other phones.
   useEffect(() => store.subscribe(() => pull()), [pull]);
 
@@ -609,12 +667,12 @@ export default function App() {
     });
   };
 
-  const sendEmote = async (emoteId, roundId, hole) => {
+  const sendEmote = async (emoteId, roundId, hole, subjectId) => {
     if (!me) return;
     const mine = [
-      { e: emoteId, at: Date.now(), r: roundId, h: hole },
+      { e: emoteId, at: Date.now(), r: roundId, h: hole, to: subjectId || me },
       ...(emotes[me] || []),
-    ].slice(0, 40);
+    ].slice(0, 60);
     setEmotes((prev) => ({ ...prev, [me]: mine }));
     await sset(K.emotes(me), mine);
   };
@@ -662,6 +720,36 @@ export default function App() {
       setPopup(null);
     }
   };
+
+  // First hole this player hasn't posted yet, so a fresh phone opens in the
+  // right place instead of back on the tee.
+  const firstOpenHole = useCallback(
+    (roundId) => {
+      const round = cfg.rounds.find((r) => r.id === roundId);
+      if (!round) return 0;
+      const card =
+        round.format === "scramble"
+          ? (teamScores[(cfg.players.find((p) => p.id === me) || {}).team] || {})[roundId]
+          : (scores[me] || {})[roundId];
+      if (!card) return 0;
+      const i = card.findIndex((v) => v == null);
+      return i === -1 ? 17 : i;
+    },
+    [cfg.rounds, cfg.players, scores, teamScores, me]
+  );
+
+  const setHolePos = useCallback((roundId, hole) => {
+    setPos((prev) => {
+      const next = { ...prev, [roundId]: hole };
+      store.setLocal("dw26:pos", next);
+      return next;
+    });
+  }, []);
+
+  const setActiveRound = useCallback((id) => {
+    setActiveRoundRaw(id);
+    store.setLocal("dw26:round", id);
+  }, []);
 
   const saveConfig = async (next) => {
     setCfg(next);
@@ -792,23 +880,28 @@ export default function App() {
           const done = nets.filter((v) => v != null).length;
           return { t, total: nets.reduce((s, v) => s + (v || 0), 0), done, star: voids.some(Boolean) };
         }
-        // Sundre and Wolf Creek: the team is carried by whichever partner
-        // posts the lower net round. Partners are not added together.
-        const cards = teamPlayers(t).map((p) => {
-          const nets = netsFor(p.id, round.id, course);
-          return {
-            p,
-            done: nets.filter((v) => v != null).length,
-            total: nets.reduce((s, v) => s + (v || 0), 0),
-            star: xsFor(p.id, round.id).some(Boolean),
-          };
-        });
-        // Only compare cards that are equally far along, or a half-finished
-        // round would look like the lowest score on the board.
-        const furthest = Math.max(...cards.map((c) => c.done));
-        const level = cards.filter((c) => c.done === furthest);
-        const best = level.reduce((lo, c) => (c.total < lo.total ? c : lo), level[0]);
-        return { t, total: best.total, done: furthest, star: best.star, by: best.p.name };
+        // Sundre and Wolf Creek: hole by hole, take whichever partner posts
+        // the lower net on that hole, then total those 18. Best ball — not
+        // one player's whole round, and not the two added together.
+        const { nets, voids } = teamNetsBestBall(t, round.id, course);
+        const done = nets.filter((v) => v != null).length;
+        const [q1, q2] = teamPlayers(t);
+        const n1 = netsFor(q1.id, round.id, course);
+        const n2 = netsFor(q2.id, round.id, course);
+        // Who is actually carrying the card, hole by hole.
+        let c1 = 0, c2 = 0;
+        for (let i = 0; i < 18; i++) {
+          if (nets[i] == null) continue;
+          if (n1[i] != null && n1[i] === nets[i]) c1 += 1;
+          if (n2[i] != null && n2[i] === nets[i]) c2 += 1;
+        }
+        return {
+          t,
+          total: nets.reduce((sum, v) => sum + (v || 0), 0),
+          done,
+          star: voids.some(Boolean),
+          split: done ? `${q1.name} ${c1} \u00b7 ${q2.name} ${c2}` : null,
+        };
       });
       detail.aggregate = [...totals].sort((x, y) => x.total - y.total);
       const allDone = totals.every((x) => x.done === 18);
@@ -882,6 +975,7 @@ export default function App() {
             chFor={chFor} netsFor={netsFor} xsFor={xsFor}
             teamNetsBestBall={teamNetsBestBall} teamScrambleNets={teamScrambleNets}
             sendEmote={sendEmote} feed={feed} removeEmote={removeEmote}
+            hole={pos[round.id] ?? 0} setHolePos={setHolePos}
           />
         )}
         {tab === "board" && (
@@ -1089,10 +1183,10 @@ function TabBar({ tab, setTab }) {
    ENTRY
    ============================================================ */
 
-function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamScores, setHole, setTeamHole, chFor, netsFor, xsFor, teamNetsBestBall, teamScrambleNets, sendEmote, feed, removeEmote }) {
-  const [hole, setHoleIdx] = useState(0);
+function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamScores, setHole, setTeamHole, chFor, netsFor, xsFor, teamNetsBestBall, teamScrambleNets, sendEmote, feed, removeEmote, hole, setHolePos }) {
   const [seat, setSeat] = useState(0);
   const [emoteOpen, setEmoteOpen] = useState(false);
+  const setHoleIdx = (h) => setHolePos(round.id, Math.max(0, Math.min(17, h)));
 
   const myPlayer = cfg.players.find((p) => p.id === me);
 
@@ -1162,7 +1256,7 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
       {/* round switcher */}
       <div className="flex" style={{ gap: 6, marginBottom: 14 }}>
         {cfg.rounds.map((r) => (
-          <Btn key={r.id} active={r.id === round.id} onClick={() => { setActiveRound(r.id); setHoleIdx(0); setSeat(0); }} style={{ flex: 1, padding: "8px 4px", fontSize: 12 }}>
+          <Btn key={r.id} active={r.id === round.id} onClick={() => { setActiveRound(r.id); setSeat(0); }} style={{ flex: 1, padding: "8px 4px", fontSize: 12 }}>
             {r.label}
           </Btn>
         ))}
@@ -1275,7 +1369,9 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
 
       <EmoteBar
         cfg={cfg} feed={feed} open={emoteOpen} setOpen={setEmoteOpen} onRemove={removeEmote}
-        onSend={(id) => { sendEmote(id, round.id, hole); setEmoteOpen(false); }}
+        roundId={round.id} hole={hole}
+        seats={seats.filter((x) => x.kind === "player").map((x) => ({ id: x.p.id }))}
+        onSend={(id, subjectId) => { sendEmote(id, round.id, hole, subjectId); setEmoteOpen(false); }}
       />
 
       <LiveMatch cfg={cfg} round={round} course={course} ta={ta} tb={tb} hole={hole}
@@ -1357,14 +1453,26 @@ function SwipeRow({ children, onDelete, last }) {
   );
 }
 
-function EmoteBar({ cfg, feed, open, setOpen, onSend, onRemove }) {
+function EmoteBar({ cfg, feed, open, setOpen, onSend, onRemove, roundId, hole, seats }) {
+  const [picked, setPicked] = useState(null);
   const recent = (feed || []).slice(0, 6);
+  const onThisHole = (feed || []).filter((f) => f.r === roundId && f.h === hole);
+
+  // Whoever is in this match first, then the rest of the field.
+  const inMatch = seats.map((x) => x.id);
+  const people = [
+    ...cfg.players.filter((p) => inMatch.includes(p.id)),
+    ...cfg.players.filter((p) => !inMatch.includes(p.id)),
+  ];
+
+  const name = (id) => (cfg.players.find((p) => p.id === id) || {}).name || "Someone";
+
   return (
     <div style={{ marginTop: 16 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
         <Eyebrow>Reactions</Eyebrow>
         <button
-          onClick={() => setOpen(!open)}
+          onClick={() => { setOpen(!open); setPicked(null); }}
           style={{
             background: open ? C.orange : C.panel2, color: open ? C.ink : C.paper,
             border: `1px solid ${open ? C.orange : C.line}`, borderRadius: 20,
@@ -1375,17 +1483,11 @@ function EmoteBar({ cfg, feed, open, setOpen, onSend, onRemove }) {
         </button>
       </div>
 
-      {open && (
+      {open && !picked && (
         <div className="grid grid-cols-4" style={{ gap: 8, marginBottom: 12 }}>
           {EMOTES.map((em) => (
-            <button
-              key={em.id}
-              onClick={() => onSend(em.id)}
-              style={{
-                background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12,
-                padding: "12px 2px", color: C.paper,
-              }}
-            >
+            <button key={em.id} onClick={() => setPicked(em.id)}
+              style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 2px", color: C.paper }}>
               <div style={{ fontSize: 26, lineHeight: 1.1 }}>{em.e}</div>
               <div style={{ fontSize: 9, fontWeight: 800, color: C.dim, marginTop: 3 }}>{em.label}</div>
             </button>
@@ -1393,22 +1495,62 @@ function EmoteBar({ cfg, feed, open, setOpen, onSend, onRemove }) {
         </div>
       )}
 
+      {open && picked && (
+        <Panel style={{ marginBottom: 12 }}>
+          <div className="flex items-center" style={{ gap: 10, marginBottom: 10 }}>
+            <span style={{ fontSize: 28 }}>{EMOTE_BY_ID[picked].e}</span>
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 15 }}>{EMOTE_BY_ID[picked].label}</div>
+              <div style={{ fontSize: 11, color: C.dim }}>Who's this about? · Hole {hole + 1}</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-4" style={{ gap: 6 }}>
+            {people.map((p) => (
+              <button key={p.id}
+                onClick={() => { onSend(picked, p.id); setPicked(null); }}
+                style={{
+                  background: C.panel2, border: `1px solid ${TEAM_COLORS[p.team]}`,
+                  borderRadius: 10, padding: "10px 2px",
+                  color: TEAM_COLORS[p.team], fontWeight: 800, fontSize: 12,
+                }}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+          <Btn onClick={() => setPicked(null)} style={{ width: "100%", marginTop: 10 }}>Back</Btn>
+        </Panel>
+      )}
+
+      {onThisHole.length > 0 && (
+        <Panel style={{ marginBottom: 10, padding: "8px 10px", borderColor: C.orange }}>
+          <div style={{ fontSize: 9, color: C.orange, fontWeight: 800, letterSpacing: "0.14em", marginBottom: 6 }}>
+            ON HOLE {hole + 1}
+          </div>
+          {onThisHole.map((f) => (
+            <div key={`${f.pid}-${f.at}`} className="flex items-center" style={{ gap: 8, padding: "3px 0" }}>
+              <span style={{ fontSize: 17 }}>{(EMOTE_BY_ID[f.e] || {}).e}</span>
+              <span style={{ fontSize: 12, color: C.paper }}>
+                {narrate(f.e, name(f.pid), name(f.to || f.pid))}
+              </span>
+            </div>
+          ))}
+        </Panel>
+      )}
+
       {recent.length > 0 ? (
         <Panel style={{ padding: "4px 10px", overflow: "hidden" }}>
           {recent.map((f, i) => {
-            const p = cfg.players.find((x) => x.id === f.pid);
             const em = EMOTE_BY_ID[f.e];
-            if (!p || !em) return null;
+            if (!em) return null;
+            const subject = cfg.players.find((x) => x.id === (f.to || f.pid));
             return (
-              <SwipeRow
-                key={`${f.pid}-${f.at}`}
-                last={i === recent.length - 1}
-                onDelete={() => onRemove(f.pid, f.at)}
-              >
+              <SwipeRow key={`${f.pid}-${f.at}`} last={i === recent.length - 1}
+                onDelete={() => onRemove(f.pid, f.at)}>
                 <div className="flex items-center" style={{ gap: 10 }}>
                   <span style={{ fontSize: 19 }}>{em.e}</span>
-                  <span style={{ fontWeight: 800, fontSize: 13, color: TEAM_COLORS[p.team] }}>{p.name}</span>
-                  <span style={{ fontSize: 12, color: C.paper }}>{em.label}</span>
+                  <span style={{ fontSize: 12, color: subject ? TEAM_COLORS[subject.team] : C.paper, fontWeight: 700 }}>
+                    {narrate(f.e, name(f.pid), name(f.to || f.pid))}
+                  </span>
                   <span style={{ marginLeft: "auto", fontSize: 10, color: C.dim, fontFamily: MONO }}>
                     {f.h != null ? `H${f.h + 1}` : ""}
                   </span>
@@ -1416,7 +1558,7 @@ function EmoteBar({ cfg, feed, open, setOpen, onSend, onRemove }) {
               </SwipeRow>
             );
           })}
-          <div style={{ fontSize: 10, color: C.dim, marginTop: 8 }}>
+          <div style={{ fontSize: 10, color: C.dim, padding: "8px 0 4px" }}>
             Swipe a reaction left to delete it.
           </div>
         </Panel>
@@ -1524,11 +1666,11 @@ function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
       <Eyebrow>
         {round.format === "scramble"
           ? `Four-team net scramble score \u2014 ${cfg.points.aggregateWin} pts to lowest`
-          : `Low net round \u2014 ${cfg.points.aggregateWin} pts to lowest`}
+          : `Best ball net \u2014 ${cfg.points.aggregateWin} pts to lowest`}
       </Eyebrow>
       {round.format !== "scramble" && (
         <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, lineHeight: 1.5 }}>
-          Each team's better net round counts. Partners aren't added together.
+          Each hole takes the team's lower net score. Those 18 are totalled.
         </div>
       )}
       <Panel>
@@ -1539,8 +1681,8 @@ function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
               <span style={{ fontFamily: MONO, color: C.dim, fontSize: 12 }}>{i + 1}</span>
               <div>
                 <div style={{ color: TEAM_COLORS[row.t], fontWeight: 800, fontSize: 14 }}>{cfg.teams[row.t]}</div>
-                {row.by && row.done > 0 && (
-                  <div style={{ fontSize: 10, color: C.dim }}>carried by {row.by}</div>
+                {row.split && (
+                  <div style={{ fontSize: 10, color: C.dim }}>holes counted — {row.split}</div>
                 )}
               </div>
             </div>
@@ -1711,9 +1853,188 @@ function GamesTab({ cfg, games, saveGames }) {
    STANDINGS
    ============================================================ */
 
-function StandingsTab({ cfg, standings, feed = [], removeEmote }) {
-  const [showLog, setShowLog] = useState(false);
+/* The weekend as it actually happened: titles, then the running account,
+   newest first. */
+function HallOfFame({ cfg, feed, removeEmote }) {
+  const [tab, setTab] = useState("titles");
   const [confirmId, setConfirmId] = useState(null);
+  const name = (id) => (cfg.players.find((p) => p.id === id) || {}).name || "Someone";
+  const player = (id) => cfg.players.find((p) => p.id === id);
+
+  if (!feed.length) {
+    return (
+      <Panel style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 13, color: C.paper, fontWeight: 700, marginBottom: 4 }}>
+          Nothing to report yet.
+        </div>
+        <div style={{ fontSize: 12, color: C.dim, lineHeight: 1.6 }}>
+          Every reaction gets recorded here with who threw it, who wore it, and
+          which hole it happened on. The titles get handed out once there's
+          something to hand out.
+        </div>
+      </Panel>
+    );
+  }
+
+  // Tally by subject and by sender.
+  const got = {}, gave = {};
+  for (const f of feed) {
+    const to = f.to || f.pid;
+    got[to] = got[to] || {};
+    got[to][f.e] = (got[to][f.e] || 0) + 1;
+    gave[f.pid] = gave[f.pid] || {};
+    gave[f.pid][f.e] = (gave[f.pid][f.e] || 0) + 1;
+  }
+
+  const titles = AWARDS.map((a) => {
+    const table = a.dir === "to" ? got : gave;
+    let best = null;
+    for (const [pid, counts] of Object.entries(table)) {
+      const n = counts[a.id] || 0;
+      if (n > 0 && (!best || n > best.n)) best = { pid, n };
+    }
+    return best ? { ...a, ...best } : null;
+  }).filter(Boolean);
+
+  const loudest = Object.entries(gave)
+    .map(([pid, c]) => ({ pid, n: Object.values(c).reduce((x, y) => x + y, 0) }))
+    .sort((a, b) => b.n - a.n)[0];
+  const mostRoasted = Object.entries(got)
+    .map(([pid, c]) => ({ pid, n: Object.values(c).reduce((x, y) => x + y, 0) }))
+    .sort((a, b) => b.n - a.n)[0];
+
+  const toggle = (id, label) => (
+    <button key={id} onClick={() => setTab(id)}
+      style={{
+        flex: 1, padding: "9px 4px", borderRadius: 8, fontSize: 12, fontWeight: 800,
+        background: tab === id ? C.panel2 : "transparent",
+        border: `1px solid ${tab === id ? C.gold : C.line}`,
+        color: tab === id ? C.gold : C.dim,
+      }}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div className="flex" style={{ gap: 6, marginBottom: 10 }}>
+        {toggle("titles", "Titles")}
+        {toggle("story", `The story (${feed.length})`)}
+      </div>
+
+      {tab === "titles" && (
+        <>
+          <Panel style={{ marginBottom: 10 }}>
+            <div className="flex" style={{ gap: 10 }}>
+              {[
+                { row: mostRoasted, label: "Most roasted", sub: "reactions taken" },
+                { row: loudest, label: "Loudest mouth", sub: "reactions thrown" },
+              ].map((x, i) =>
+                x.row ? (
+                  <div key={i} style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 9, color: C.dim, fontWeight: 800, letterSpacing: "0.12em" }}>
+                      {x.label.toUpperCase()}
+                    </div>
+                    <div style={{
+                      fontSize: 18, fontWeight: 900, marginTop: 3,
+                      color: TEAM_COLORS[(player(x.row.pid) || {}).team ?? 0],
+                    }}>
+                      {name(x.row.pid)}
+                    </div>
+                    <div style={{ fontSize: 10, color: C.dim, fontFamily: MONO }}>
+                      {x.row.n} {x.sub}
+                    </div>
+                  </div>
+                ) : null
+              )}
+            </div>
+          </Panel>
+
+          {titles.map((t) => {
+            const p = player(t.pid);
+            const em = EMOTE_BY_ID[t.id];
+            return (
+              <Panel key={t.id} style={{ marginBottom: 8, padding: 12 }}>
+                <div className="flex items-center" style={{ gap: 12 }}>
+                  <span style={{ fontSize: 26 }}>{em.e}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 10, color: C.gold, fontWeight: 800, letterSpacing: "0.1em" }}>
+                      {t.title.toUpperCase()}
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: TEAM_COLORS[(p || {}).team ?? 0] }}>
+                      {name(t.pid)}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.dim }}>{t.blurb}</div>
+                  </div>
+                  <span style={{ fontFamily: MONO, fontSize: 22, fontWeight: 900 }}>{t.n}</span>
+                </div>
+              </Panel>
+            );
+          })}
+        </>
+      )}
+
+      {tab === "story" && (
+        <Panel style={{ padding: 10 }}>
+          {feed.map((f, i) => {
+            const em = EMOTE_BY_ID[f.e];
+            if (!em) return null;
+            const rid = `${f.pid}-${f.at}`;
+            const round = cfg.rounds.find((r) => r.id === f.r);
+            const when = new Date(f.at);
+            const subject = player(f.to || f.pid);
+            const prev = feed[i - 1];
+            const newHole = !prev || prev.r !== f.r || prev.h !== f.h;
+            return (
+              <div key={rid}>
+                {newHole && (
+                  <div style={{
+                    fontSize: 9, color: C.orange, fontWeight: 800, letterSpacing: "0.12em",
+                    padding: i === 0 ? "2px 0 8px" : "14px 0 8px",
+                    borderTop: i === 0 ? "none" : `1px solid ${C.line}`,
+                    marginTop: i === 0 ? 0 : 6,
+                  }}>
+                    {(round ? round.label.toUpperCase() : "SOMEWHERE")}
+                    {f.h != null ? ` · HOLE ${f.h + 1}` : ""}
+                  </div>
+                )}
+                <div className="flex items-center" style={{ gap: 10, padding: "5px 0" }}>
+                  <span style={{ fontSize: 20 }}>{em.e}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: C.paper, fontWeight: 700, lineHeight: 1.35 }}>
+                      {narrate(f.e, name(f.pid), name(f.to || f.pid))}
+                    </div>
+                    <div style={{ fontSize: 10, color: C.dim, fontFamily: MONO, marginTop: 2 }}>
+                      {subject ? `${cfg.teams[subject.team]} · ` : ""}
+                      {when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (confirmId === rid) { removeEmote(f.pid, f.at); setConfirmId(null); }
+                      else setConfirmId(rid);
+                    }}
+                    onBlur={() => setConfirmId(null)}
+                    style={{
+                      background: confirmId === rid ? C.red : "transparent",
+                      border: `1px solid ${confirmId === rid ? C.red : C.line}`,
+                      borderRadius: 6, padding: "6px 9px",
+                      color: confirmId === rid ? C.ink : C.dim,
+                      fontSize: 11, fontWeight: 800, whiteSpace: "nowrap",
+                    }}>
+                    {confirmId === rid ? "Delete" : "\u00D7"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </Panel>
+      )}
+    </div>
+  );
+}
+
+function StandingsTab({ cfg, standings, feed = [], removeEmote }) {
   const rows = [0, 1, 2, 3]
     .map((t) => ({ t, total: standings.total[t] }))
     .sort((a, b) => b.total - a.total);
@@ -1742,93 +2063,8 @@ function StandingsTab({ cfg, standings, feed = [], removeEmote }) {
         ))}
       </Panel>
 
-      <Eyebrow>Hall of shame</Eyebrow>
-      <Panel style={{ marginBottom: 16 }}>
-        {(() => {
-          const tally = {};
-          for (const f of feed) tally[f.e] = (tally[f.e] || 0) + 1;
-          const rows = EMOTES.filter((e) => tally[e.id]).sort((a, b) => tally[b.id] - tally[a.id]);
-          if (!rows.length)
-            return <div style={{ fontSize: 12, color: C.dim }}>No reactions yet this weekend.</div>;
-          return (
-            <div className="flex" style={{ flexWrap: "wrap", gap: 8 }}>
-              {rows.map((e) => (
-                <div key={e.id} className="flex items-center"
-                  style={{ gap: 6, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 20, padding: "6px 12px" }}>
-                  <span style={{ fontSize: 17 }}>{e.e}</span>
-                  <span style={{ fontSize: 11, color: C.dim, fontWeight: 700 }}>{e.label}</span>
-                  <span style={{ fontFamily: MONO, fontWeight: 900, fontSize: 14 }}>{tally[e.id]}</span>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
-
-        {feed.length > 0 && (
-          <button
-            onClick={() => setShowLog(!showLog)}
-            style={{
-              marginTop: 12, width: "100%", background: C.panel2,
-              border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px",
-              color: C.paper, fontSize: 12, fontWeight: 800,
-            }}
-          >
-            {showLog ? "Hide the log" : `Show all ${feed.length} reactions`}
-          </button>
-        )}
-      </Panel>
-
-      {showLog && (
-        <>
-          <Eyebrow>Every reaction, who sent it, and when</Eyebrow>
-          <Panel style={{ marginBottom: 16, padding: 10 }}>
-            {feed.map((f) => {
-              const p = cfg.players.find((x) => x.id === f.pid);
-              const em = EMOTE_BY_ID[f.e];
-              if (!p || !em) return null;
-              const rid = `${f.pid}-${f.at}`;
-              const round = cfg.rounds.find((r) => r.id === f.r);
-              const when = new Date(f.at);
-              return (
-                <div key={rid} className="flex items-center"
-                  style={{ gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.line}` }}>
-                  <span style={{ fontSize: 20 }}>{em.e}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: TEAM_COLORS[p.team] }}>
-                      {p.name}
-                      <span style={{ color: C.paper, fontWeight: 700 }}> · {em.label}</span>
-                    </div>
-                    <div style={{ fontSize: 10, color: C.dim, fontFamily: MONO, marginTop: 2 }}>
-                      {cfg.teams[p.team]}
-                      {round ? ` · ${round.label}` : ""}
-                      {f.h != null ? ` · hole ${f.h + 1}` : ""}
-                      {" · "}
-                      {when.toLocaleDateString([], { month: "short", day: "numeric" })}{" "}
-                      {when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (confirmId === rid) { removeEmote(f.pid, f.at); setConfirmId(null); }
-                      else setConfirmId(rid);
-                    }}
-                    onBlur={() => setConfirmId(null)}
-                    style={{
-                      background: confirmId === rid ? C.red : "transparent",
-                      border: `1px solid ${confirmId === rid ? C.red : C.line}`,
-                      borderRadius: 6, padding: "6px 10px",
-                      color: confirmId === rid ? C.ink : C.dim,
-                      fontSize: 11, fontWeight: 800, whiteSpace: "nowrap",
-                    }}
-                  >
-                    {confirmId === rid ? "Delete" : "\u00D7"}
-                  </button>
-                </div>
-              );
-            })}
-          </Panel>
-        </>
-      )}
+      <Eyebrow color={C.gold}>Hall of fame</Eyebrow>
+      <HallOfFame cfg={cfg} feed={feed} removeEmote={removeEmote} />
 
       <Eyebrow>Where the points came from</Eyebrow>
       <Panel>
