@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "1.7 \u2014 front, back and overall matches";
+const APP_VERSION = "1.8 \u2014 front, back and overall matches";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -1468,6 +1468,115 @@ function LiveMatch({ cfg, round, course, ta, tb, hole, netsFor, xsFor, teamNetsB
         <span style={{ color: TEAM_COLORS[tb], fontWeight: 800 }}>{cfg.teams[tb]}</span>
       </div>
     </Panel>
+  );
+}
+
+function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
+  const round = cfg.rounds.find((r) => r.id === activeRound) || cfg.rounds[0];
+  const { detail, course, pts } = roundPoints(round);
+  const fmt = { match: "2v2 net match play", highlow: "2v2 net high-low", scramble: "2v2 scramble" }[round.format];
+  // Mid-round, compare against the par of the holes actually played.
+  const parSoFar = (holes) => course.par.slice(0, holes).reduce((a, b) => a + b, 0);
+
+  return (
+    <div>
+      <div className="flex" style={{ gap: 6, marginBottom: 14 }}>
+        {cfg.rounds.map((r) => (
+          <Btn key={r.id} active={r.id === round.id} onClick={() => setActiveRound(r.id)}
+            style={{ flex: 1, padding: "8px 4px", fontSize: 12 }}>
+            {r.label}
+          </Btn>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 11, color: C.dim, marginBottom: 12 }}>
+        {course.name} · {fmt} · rating {course.rating}/{course.slope}
+      </div>
+
+      <Eyebrow>Direct matches — front, back and overall</Eyebrow>
+      {detail.matches.map((m, i) => (
+        <Panel key={i} style={{ marginBottom: 10 }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+            <span style={{ fontWeight: 900, fontSize: 14 }}>
+              <span style={{ color: TEAM_COLORS[m.ta] }}>{cfg.teams[m.ta]}</span>
+              <span style={{ color: C.dim }}> v </span>
+              <span style={{ color: TEAM_COLORS[m.tb] }}>{cfg.teams[m.tb]}</span>
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 800 }}>
+              {statusText(m.overall, cfg.teams[m.ta], cfg.teams[m.tb])}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between"
+            style={{ fontSize: 9, color: C.dim, fontWeight: 800, letterSpacing: "0.1em", marginBottom: 4 }}>
+            <span>OVERALL</span>
+            <span>{cfg.points.matchWin} PT</span>
+          </div>
+          <MatchTape result={m.overall} colorA={TEAM_COLORS[m.ta]} colorB={TEAM_COLORS[m.tb]} current={-1} />
+
+          <div className="flex" style={{ gap: 8, marginTop: 10 }}>
+            <NineBox label="FRONT" res={m.front} m={m} cfg={cfg} worth={cfg.points.nineWin} />
+            <NineBox label="BACK" res={m.back} m={m} cfg={cfg} worth={cfg.points.nineWin} />
+          </div>
+        </Panel>
+      ))}
+
+      <Eyebrow>
+        {round.format === "scramble"
+          ? `Four-team net scramble score \u2014 ${cfg.points.aggregateWin} pts to lowest`
+          : `Low net round \u2014 ${cfg.points.aggregateWin} pts to lowest`}
+      </Eyebrow>
+      {round.format !== "scramble" && (
+        <div style={{ fontSize: 11, color: C.dim, marginBottom: 8, lineHeight: 1.5 }}>
+          Each team's better net round counts. Partners aren't added together.
+        </div>
+      )}
+      <Panel>
+        {detail.aggregate.map((row, i) => (
+          <div key={row.t} className="flex items-center justify-between"
+            style={{ padding: "8px 0", borderBottom: i < 3 ? `1px solid ${C.line}` : "none" }}>
+            <div className="flex items-center" style={{ gap: 10 }}>
+              <span style={{ fontFamily: MONO, color: C.dim, fontSize: 12 }}>{i + 1}</span>
+              <div>
+                <div style={{ color: TEAM_COLORS[row.t], fontWeight: 800, fontSize: 14 }}>{cfg.teams[row.t]}</div>
+                {row.by && row.done > 0 && (
+                  <div style={{ fontSize: 10, color: C.dim }}>carried by {row.by}</div>
+                )}
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div className="flex items-center" style={{ gap: 8, justifyContent: "flex-end" }}>
+                <span style={{ fontFamily: MONO, fontWeight: 900, fontSize: 18 }}>
+                  {row.done === 0 ? "—" : `${row.total}${row.star ? "*" : ""}`}
+                </span>
+                {row.done > 0 && (
+                  <span style={{
+                    fontFamily: MONO, fontWeight: 900, fontSize: 15,
+                    color: parColor(row.total, parSoFar(row.done)),
+                    minWidth: 32, textAlign: "right",
+                  }}>
+                    {toPar(row.total, parSoFar(row.done))}
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 10, color: C.dim, fontFamily: MONO, marginTop: 2 }}>
+                {row.done === 18 ? "F" : `H${row.done}`}
+              </div>
+            </div>
+          </div>
+        ))}
+      </Panel>
+
+      <Eyebrow color={C.orange}>Points from this course</Eyebrow>
+      <Panel>
+        {pts.map((p, t) => (
+          <div key={t} className="flex items-center justify-between" style={{ padding: "6px 0" }}>
+            <span style={{ color: TEAM_COLORS[t], fontWeight: 800, fontSize: 13 }}>{cfg.teams[t]}</span>
+            <span style={{ fontFamily: MONO, fontWeight: 900 }}>{p}</span>
+          </div>
+        ))}
+      </Panel>
+    </div>
   );
 }
 
