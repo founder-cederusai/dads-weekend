@@ -1738,6 +1738,49 @@ function Section({ id, title, open, setOpen, children }) {
   );
 }
 
+function ConnectionPanel() {
+  const [state, setState] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    setState(await store.testConnection());
+    setBusy(false);
+  };
+
+  useEffect(() => { run(); }, []);
+
+  return (
+    <Panel>
+      <div className="flex items-center" style={{ gap: 10, marginBottom: 10 }}>
+        <span style={{
+          width: 12, height: 12, borderRadius: 6, flexShrink: 0,
+          background: !state ? C.dim : state.ok ? C.green : C.red,
+        }} />
+        <span style={{ fontWeight: 900, fontSize: 14 }}>
+          {!state ? "Checking\u2026" : state.ok ? "Syncing" : "Not syncing"}
+        </span>
+      </div>
+      {state && (
+        <div style={{ fontSize: 12, color: state.ok ? C.dim : C.red, lineHeight: 1.6, marginBottom: 12 }}>
+          {state.reason}
+        </div>
+      )}
+      {state && !state.ok && (
+        <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.6, marginBottom: 12 }}>
+          Scores are still safe on each phone. Fix the keys in Netlify under
+          Site configuration \u2192 Environment variables, then Deploys \u2192
+          Trigger deploy \u2192 Clear cache and deploy site. Everything queued
+          will send itself once this turns green.
+        </div>
+      )}
+      <Btn onClick={run} disabled={busy} style={{ width: "100%" }}>
+        {busy ? "Testing\u2026" : "Test again"}
+      </Btn>
+    </Panel>
+  );
+}
+
 /* Nothing destructive on one tap. Same two-step as Refresh. */
 function ResetButton({ label, onConfirm, tone }) {
   const [step, setStep] = useState(0);
@@ -1980,6 +2023,10 @@ function SetupTab({ cfg, saveConfig, resolveCourse, chFor, resetData }) {
             A team's ceiling is 6 + 6 + 6 + 3 + 3 + 1 = 25.
           </div>
         </Panel>
+      </Section>
+
+      <Section id="connection" title="Connection" open={open} setOpen={setOpen}>
+        <ConnectionPanel />
       </Section>
 
       <Section id="reset" title="Clear data" open={open} setOpen={setOpen}>

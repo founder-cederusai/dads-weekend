@@ -140,6 +140,29 @@ export function subscribe(onChange) {
   return () => sb.removeChannel(ch);
 }
 
+/* Round-trips a real row so a green light means genuinely working, not
+   just "keys look present". Returns a plain-English reason on failure. */
+export async function testConnection() {
+  if (!URL || !KEY) {
+    return {
+      ok: false,
+      reason: "No Supabase keys in this build. VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY were missing when Netlify built the site.",
+    };
+  }
+  if (!navigator.onLine) return { ok: false, reason: "This phone is offline." };
+  try {
+    const probe = { key: "dw26:__probe", value: { at: Date.now() }, updated_at: new Date().toISOString() };
+    const { error: wErr } = await sb.from("kv").upsert(probe);
+    if (wErr) return { ok: false, reason: `Write refused: ${wErr.message}` };
+    const { data, error: rErr } = await sb.from("kv").select("key").eq("key", "dw26:__probe").maybeSingle();
+    if (rErr) return { ok: false, reason: `Read refused: ${rErr.message}` };
+    if (!data) return { ok: false, reason: "Write reported success but the row isn't there. Check the table policy." };
+    return { ok: true, reason: `Connected to ${URL.replace("https://", "")}` };
+  } catch (e) {
+    return { ok: false, reason: `Could not reach Supabase: ${e.message}` };
+  }
+}
+
 /* Purely local — which player is on this phone. */
 export function getMe() {
   try {
