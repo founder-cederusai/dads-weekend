@@ -831,7 +831,7 @@ export default function App() {
             setHole={setHole} setTeamHole={setTeamHole}
             chFor={chFor} netsFor={netsFor} xsFor={xsFor}
             teamNetsBestBall={teamNetsBestBall} teamScrambleNets={teamScrambleNets}
-            sendEmote={sendEmote} feed={feed}
+            sendEmote={sendEmote} feed={feed} removeEmote={removeEmote}
           />
         )}
         {tab === "board" && (
@@ -1039,7 +1039,7 @@ function TabBar({ tab, setTab }) {
    ENTRY
    ============================================================ */
 
-function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamScores, setHole, setTeamHole, chFor, netsFor, xsFor, teamNetsBestBall, teamScrambleNets, sendEmote, feed }) {
+function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamScores, setHole, setTeamHole, chFor, netsFor, xsFor, teamNetsBestBall, teamScrambleNets, sendEmote, feed, removeEmote }) {
   const [hole, setHoleIdx] = useState(0);
   const [seat, setSeat] = useState(0);
   const [emoteOpen, setEmoteOpen] = useState(false);
@@ -1224,7 +1224,7 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
       </div>
 
       <EmoteBar
-        cfg={cfg} feed={feed} open={emoteOpen} setOpen={setEmoteOpen}
+        cfg={cfg} feed={feed} open={emoteOpen} setOpen={setEmoteOpen} onRemove={removeEmote}
         onSend={(id) => { sendEmote(id, round.id, hole); setEmoteOpen(false); }}
       />
 
@@ -1234,7 +1234,80 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
   );
 }
 
-function EmoteBar({ cfg, feed, open, setOpen, onSend }) {
+/* Swipe a reaction left to bin it. Horizontal intent only — a mostly
+   vertical drag is the page scrolling and must be left alone. */
+function SwipeRow({ children, onDelete, last }) {
+  const [dx, setDx] = useState(0);
+  const [going, setGoing] = useState(false);
+  const start = useRef(null);
+  const axis = useRef(null);
+  const THRESHOLD = 88;
+
+  const onStart = (e) => {
+    const t = e.touches[0];
+    start.current = { x: t.clientX, y: t.clientY };
+    axis.current = null;
+  };
+
+  const onMove = (e) => {
+    if (!start.current) return;
+    const t = e.touches[0];
+    const mx = t.clientX - start.current.x;
+    const my = t.clientY - start.current.y;
+    if (!axis.current) {
+      if (Math.abs(mx) < 6 && Math.abs(my) < 6) return;
+      axis.current = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+    }
+    if (axis.current !== "x") return;
+    setDx(Math.min(0, mx));
+  };
+
+  const onEnd = () => {
+    if (axis.current === "x" && dx <= -THRESHOLD) {
+      setGoing(true);
+      setDx(-window.innerWidth);
+      setTimeout(onDelete, 180);
+    } else {
+      setDx(0);
+    }
+    start.current = null;
+    axis.current = null;
+  };
+
+  const armed = dx <= -THRESHOLD;
+
+  return (
+    <div style={{ position: "relative", overflow: "hidden", borderBottom: last ? "none" : `1px solid ${C.line}` }}>
+      <div
+        style={{
+          position: "absolute", inset: 0, display: "flex", alignItems: "center",
+          justifyContent: "flex-end", paddingRight: 16,
+          background: armed ? C.red : C.panel2,
+          color: armed ? C.ink : C.dim, fontSize: 11, fontWeight: 800,
+        }}
+      >
+        {armed ? "Release to delete" : "Delete"}
+      </div>
+      <div
+        onTouchStart={onStart}
+        onTouchMove={onMove}
+        onTouchEnd={onEnd}
+        onTouchCancel={onEnd}
+        style={{
+          position: "relative",
+          transform: `translateX(${dx}px)`,
+          transition: dx === 0 || going ? "transform 180ms ease" : "none",
+          background: C.panel,
+          padding: "5px 0",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function EmoteBar({ cfg, feed, open, setOpen, onSend, onRemove }) {
   const recent = (feed || []).slice(0, 6);
   return (
     <div style={{ marginTop: 16 }}>
@@ -1271,23 +1344,31 @@ function EmoteBar({ cfg, feed, open, setOpen, onSend }) {
       )}
 
       {recent.length > 0 ? (
-        <Panel style={{ padding: 10 }}>
+        <Panel style={{ padding: "4px 10px", overflow: "hidden" }}>
           {recent.map((f, i) => {
             const p = cfg.players.find((x) => x.id === f.pid);
             const em = EMOTE_BY_ID[f.e];
             if (!p || !em) return null;
             return (
-              <div key={`${f.pid}-${f.at}`} className="flex items-center"
-                style={{ gap: 10, padding: "5px 0", borderBottom: i < recent.length - 1 ? `1px solid ${C.line}` : "none" }}>
-                <span style={{ fontSize: 19 }}>{em.e}</span>
-                <span style={{ fontWeight: 800, fontSize: 13, color: TEAM_COLORS[p.team] }}>{p.name}</span>
-                <span style={{ fontSize: 12, color: C.paper }}>{em.label}</span>
-                <span style={{ marginLeft: "auto", fontSize: 10, color: C.dim, fontFamily: MONO }}>
-                  {f.h != null ? `H${f.h + 1}` : ""}
-                </span>
-              </div>
+              <SwipeRow
+                key={`${f.pid}-${f.at}`}
+                last={i === recent.length - 1}
+                onDelete={() => onRemove(f.pid, f.at)}
+              >
+                <div className="flex items-center" style={{ gap: 10 }}>
+                  <span style={{ fontSize: 19 }}>{em.e}</span>
+                  <span style={{ fontWeight: 800, fontSize: 13, color: TEAM_COLORS[p.team] }}>{p.name}</span>
+                  <span style={{ fontSize: 12, color: C.paper }}>{em.label}</span>
+                  <span style={{ marginLeft: "auto", fontSize: 10, color: C.dim, fontFamily: MONO }}>
+                    {f.h != null ? `H${f.h + 1}` : ""}
+                  </span>
+                </div>
+              </SwipeRow>
             );
           })}
+          <div style={{ fontSize: 10, color: C.dim, marginTop: 8 }}>
+            Swipe a reaction left to delete it.
+          </div>
         </Panel>
       ) : (
         <div style={{ fontSize: 11, color: C.dim }}>
