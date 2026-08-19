@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "2.5 \u2014 scorecard view + both matches";
+const APP_VERSION = "2.6 \u2014 other group hole scores";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -1450,6 +1450,14 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
         })}
       </div>
 
+      {otherMatch && (
+        <OtherGroupHole
+          cfg={cfg} round={round} course={course} pair={otherMatch} hole={hole}
+          scores={scores} teamScores={teamScores} chFor={chFor}
+          teamScrambleNets={teamScrambleNets}
+        />
+      )}
+
       {/* the pad */}
       <Eyebrow color={TEAM_COLORS[current.t]}>
         {current.kind === "team" ? `${cfg.teams[current.t]} scramble score` : `${current.p.name}'s score`}
@@ -1506,14 +1514,7 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
         netsFor={netsFor} xsFor={xsFor} teamNetsBestBall={teamNetsBestBall}
         teamScrambleNets={teamScrambleNets} />
 
-      {otherMatch && (
-        <div style={{ opacity: 0.55, marginTop: 4 }}>
-          <LiveMatch cfg={cfg} round={round} course={course}
-            ta={otherMatch[0]} tb={otherMatch[1]} hole={-1}
-            netsFor={netsFor} xsFor={xsFor} teamNetsBestBall={teamNetsBestBall}
-            teamScrambleNets={teamScrambleNets} title="The other match" compact />
-        </div>
-      )}
+
     </div>
   );
 }
@@ -1586,6 +1587,75 @@ function SwipeRow({ children, onDelete, last }) {
         }}
       >
         {children}
+      </div>
+    </div>
+  );
+}
+
+/* Just what the other group made on this hole. Their match, nines and
+   running status all live on the Matches tab. */
+function OtherGroupHole({ cfg, round, course, pair, hole, scores, teamScores, chFor, teamScrambleNets }) {
+  const scramble = round.format === "scramble";
+  const si = course.si[hole];
+
+  const cells = scramble
+    ? pair.map((t) => ({
+        key: `t${t}`,
+        label: cfg.teams[t],
+        team: t,
+        cell: ((teamScores[t] || {})[round.id] || [])[hole],
+        strokes: strokesOnHole(teamScrambleNets(t, round.id, course).teamCH, si),
+      }))
+    : pair.flatMap((t) =>
+        cfg.players
+          .filter((p) => p.team === t)
+          .map((p) => ({
+            key: p.id,
+            label: p.name,
+            team: t,
+            cell: ((scores[p.id] || {})[round.id] || [])[hole],
+            strokes: strokesOnHole(chFor(p, course), si),
+          }))
+      );
+
+  return (
+    <div style={{ marginBottom: 12, opacity: 0.6 }}>
+      <div style={{
+        fontSize: 9, color: C.dim, fontWeight: 800,
+        letterSpacing: "0.12em", marginBottom: 5,
+      }}>
+        OTHER GROUP · HOLE {hole + 1}
+      </div>
+      <div className="flex" style={{ gap: 6 }}>
+        {cells.map((c) => {
+          const g = gv(c.cell);
+          return (
+            <div key={c.key} style={{
+              flex: 1, minWidth: 0,
+              background: C.panel,
+              border: `1px solid ${C.line}`,
+              borderRadius: 8, padding: "7px 6px",
+            }}>
+              <div style={{
+                fontSize: 10, fontWeight: 800, color: TEAM_COLORS[c.team],
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>
+                {c.label}
+                {c.strokes > 0 && (
+                  <span style={{ color: C.orange, marginLeft: 3 }}>
+                    {c.strokes > 1 ? c.strokes : "\u2022"}
+                  </span>
+                )}
+              </div>
+              <div style={{
+                fontFamily: MONO, fontSize: 17, fontWeight: 900, marginTop: 1,
+                color: g == null ? C.line : C.paper,
+              }}>
+                {g == null ? "\u2013" : `${g}${gx(c.cell) ? "*" : ""}`}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
