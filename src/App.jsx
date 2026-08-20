@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "2.7 \u2014 net/gross toggle, DW26 icon";
+const APP_VERSION = "2.8 \u2014 new nav icons";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -1182,11 +1182,7 @@ function Header({ cfg, me, setMe, syncing, lastSync, onSync, net = {}, onSetup, 
             padding: 4, color: setupOpen ? C.orange : C.dim, lineHeight: 0,
           }}
         >
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="3.2" />
-            <path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.9 1.9M16.8 16.8l1.9 1.9M18.7 5.3l-1.9 1.9M7.2 16.8l-1.9 1.9" />
-          </svg>
+          <TabIcon name="setup" />
         </button>
         <button
           onClick={tapRefresh}
@@ -1266,54 +1262,54 @@ function Header({ cfg, me, setMe, syncing, lastSync, onSync, net = {}, onSetup, 
    inherit the tab's colour. */
 function TabIcon({ name }) {
   const common = {
-    width: 19, height: 19, viewBox: "0 0 24 24", fill: "none",
-    stroke: "currentColor", strokeWidth: 1.9,
+    width: 20, height: 20, viewBox: "0 0 24 24", fill: "none",
+    stroke: "currentColor", strokeWidth: 1.8,
     strokeLinecap: "round", strokeLinejoin: "round",
     "aria-hidden": true, focusable: false,
   };
   switch (name) {
-    case "play": // a scorecard grid, mid pencil stroke
+    case "play": // pencil — this is where you write scores down
       return (
         <svg {...common}>
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <path d="M3 9h18M3 15h18M9 3v18" />
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7.5 18.5 3 20l1.5-4.5z" />
+          <path d="M14.5 5.5l4 4" />
         </svg>
       );
-    case "board": // two pins facing off
-      return (
-        <svg {...common}>
-          <path d="M6 21V4l6 2.5L6 9" />
-          <path d="M18 21V4l-6 2.5L18 9" />
-        </svg>
-      );
-    case "games": // bocce
-      return (
-        <svg {...common}>
-          <circle cx="8" cy="15" r="4" />
-          <circle cx="17" cy="16" r="3" />
-          <circle cx="14" cy="7" r="2" />
-        </svg>
-      );
-    case "card": // a scorecard with a row filled in
+    case "card": // the scorecard grid
       return (
         <svg {...common}>
           <rect x="3" y="4" width="18" height="16" rx="2" />
-          <path d="M3 9h18M8 9v11" />
-          <circle cx="12.5" cy="13" r="1.6" />
-          <rect x="16" y="11.4" width="3.2" height="3.2" />
+          <path d="M3 9.5h18M3 15h18M9 9.5V20" />
         </svg>
       );
-    case "standings": // the podium
+    case "board": // flagstick on the green
       return (
         <svg {...common}>
-          <path d="M4 21v-6h5v6M9.5 21v-11h5v11M15 21v-8h5v8" />
+          <path d="M7 21V3.5l10.5 3.2L7 9.9" />
+          <path d="M3.5 21h8" />
         </svg>
       );
-    case "setup":
+    case "games": // the target you're throwing at
       return (
         <svg {...common}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" />
+          <circle cx="12" cy="12" r="8.5" />
+          <circle cx="12" cy="12" r="4.3" />
+          <circle cx="12" cy="12" r="0.9" fill="currentColor" />
+        </svg>
+      );
+    case "standings": // the trophy
+      return (
+        <svg {...common}>
+          <path d="M7 4h10v5.5a5 5 0 0 1-10 0z" />
+          <path d="M7 5.8H4.8a2.2 2.2 0 0 0 0 4.4H7M17 5.8h2.2a2.2 2.2 0 0 1 0 4.4H17" />
+          <path d="M12 14.5V18M8.5 21h7l-.8-3h-5.4z" />
+        </svg>
+      );
+    case "setup": // an actual cog
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3.1" />
+          <path d="M19.1 14.2a1.6 1.6 0 0 0 .32 1.76l.06.06a1.94 1.94 0 1 1-2.74 2.74l-.06-.06a1.6 1.6 0 0 0-1.76-.32 1.6 1.6 0 0 0-.97 1.46v.16a1.94 1.94 0 1 1-3.88 0v-.09a1.6 1.6 0 0 0-1.03-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a1.94 1.94 0 1 1-2.74-2.74l.06-.06a1.6 1.6 0 0 0 .32-1.76 1.6 1.6 0 0 0-1.46-.97H3.2a1.94 1.94 0 1 1 0-3.88h.09a1.6 1.6 0 0 0 1.46-1.03 1.6 1.6 0 0 0-.32-1.76l-.06-.06a1.94 1.94 0 1 1 2.74-2.74l.06.06a1.6 1.6 0 0 0 1.76.32h.08a1.6 1.6 0 0 0 .97-1.46V3.2a1.94 1.94 0 1 1 3.88 0v.09a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.76-.32l.06-.06a1.94 1.94 0 1 1 2.74 2.74l-.06.06a1.6 1.6 0 0 0-.32 1.76v.08a1.6 1.6 0 0 0 1.46.97h.16a1.94 1.94 0 1 1 0 3.88h-.09a1.6 1.6 0 0 0-1.46.97z" />
         </svg>
       );
     default:
@@ -1979,7 +1975,7 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
             }
             picked={gx(cardOf(p.id)[i])}
             par={course.par[i]}
-            stroke={showNet ? 0 : strokesFor(p, i)}
+            stroke={strokesFor(p, i)}
             dim={p.team !== myTeam}
           />
         </span>
@@ -2091,9 +2087,10 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
           ))}
         </div>
         <div style={{ fontSize: 11, color: C.dim, marginTop: 10, lineHeight: 1.6 }}>
-          Shapes read against par. In GROSS view the small orange mark shows strokes
-          received on that hole; in NET view they're already taken off. An asterisk
-          means the ball was picked up. The number under each name is that player's
+          Shapes read against par. The small orange mark means a stroke is received
+          on that hole — a dot for one, a number for two — and it stays visible in
+          both views so you can always see where the shots fall. An asterisk means
+          the ball was picked up. The green number under each name is that player's
           course handicap here.
         </div>
       </Panel>
