@@ -60,8 +60,15 @@ Whatever you set syncs to every phone, so do it once on yours.
 ## How scoring works
 
 **Per course — 9 points**
-- Two direct 2v2 matches, 3 points to each winner
-- 3 points to the lowest four-team net aggregate
+
+Each 2v2 pairing plays three matches: front nine, back nine and overall
+18. One point each, so a pairing is worth 3 and the two pairings are
+worth 6. Plus 3 points to the lowest group score.
+
+At Sundre and Wolf Creek the group score is the team's **best ball net**:
+on every hole you take whichever partner posted the lower net score, then
+total those 18. Not the two rounds added together, and not one player's
+whole card. At Innisfail it's the team's net scramble score.
 
 **Games — 13 points**
 - Beersbee: six 2v2 matches, 1 point each
