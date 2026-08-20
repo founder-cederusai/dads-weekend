@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "3.1 \u2014 for all the mud holes";
+const APP_VERSION = "3.2 \u2014 road to victory";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -957,6 +957,60 @@ export default function App() {
     return pts;
   }, [games, cfg.points]);
 
+  /* What's still on the table for each team, and who can still catch whom. */
+  const outlook = useCallback(() => {
+    const rows = [0, 1, 2, 3].map((t) => ({ t, remaining: 0, items: [], openBeanbag: false }));
+
+    for (const r of cfg.rounds) {
+      const { detail } = roundPoints(r);
+      for (const m of detail.matches) {
+        const segs = [
+          ["overall 18", m.overall, cfg.points.matchWin],
+          ["front nine", m.front, cfg.points.nineWin],
+          ["back nine", m.back, cfg.points.nineWin],
+        ];
+        for (const [label, res, worth] of segs) {
+          if (res.complete) continue;
+          for (const [a, b] of [[m.ta, m.tb], [m.tb, m.ta]]) {
+            rows[a].remaining += worth;
+            rows[a].items.push({ pts: worth, text: `${r.label} ${label} v ${cfg.teams[b]}` });
+          }
+        }
+      }
+      if (!detail.aggregate.every((x) => x.done === 18)) {
+        const label = r.format === "scramble" ? "net scramble" : "best ball net";
+        for (const row of rows) {
+          row.remaining += cfg.points.aggregateWin;
+          row.items.push({ pts: cfg.points.aggregateWin, text: `${r.label} ${label}` });
+        }
+      }
+    }
+
+    BEERSBEE_PAIRS.forEach((pair, i) => {
+      if (games.beersbee[i] === 0 || games.beersbee[i] === 1) return;
+      pair.forEach((t, side) => {
+        rows[t].remaining += cfg.points.beersbeeWin;
+        rows[t].items.push({ pts: cfg.points.beersbeeWin, text: `Beersbee v ${cfg.teams[pair[1 - side]]}` });
+      });
+    });
+
+    const order = games.bocce.order;
+    const bocceDone = Array.isArray(order) && order.slice(0, 3).every((x) => x != null);
+    if (!bocceDone) {
+      for (const row of rows) {
+        row.remaining += cfg.points.bocce[0];
+        row.items.push({ pts: cfg.points.bocce[0], text: "Bocce placing" });
+      }
+    }
+
+    // The bean bag deck has no ceiling, so it can't be counted as a fixed
+    // number — it's flagged instead.
+    const anyBeanbag = [0, 1, 2, 3].some((t) => (games.beanbag[t] || 0) > 0);
+    for (const row of rows) row.openBeanbag = !anyBeanbag;
+
+    return rows;
+  }, [cfg, roundPoints, games]);
+
   const standings = useCallback(() => {
     const total = [0, 0, 0, 0];
     const byRound = {};
@@ -1032,7 +1086,8 @@ export default function App() {
         )}
         {tab === "games" && <GamesTab cfg={view} games={games} saveGames={saveGames} />}
         {tab === "standings" && (
-          <StandingsTab cfg={view} standings={standings()} feed={feed} removeEmote={removeEmote} />
+          <StandingsTab cfg={view} standings={standings()} feed={feed}
+            removeEmote={removeEmote} outlook={outlook()} />
         )}
         {tab === "setup" && (
           <SetupTab cfg={cfg} saveConfig={saveConfig} resolveCourse={resolveCourse}
@@ -2517,7 +2572,145 @@ function HallOfFame({ cfg, feed, removeEmote }) {
   );
 }
 
-function StandingsTab({ cfg, standings, feed = [], removeEmote }) {
+/* Where each team actually stands: what they've banked, what's still
+   winnable, and whether the maths has already run out. */
+function RoadToVictory({ cfg, standings, outlook }) {
+  const [openTeam, setOpenTeam] = useState(null);
+
+  const rows = [0, 1, 2, 3]
+    .map((t) => {
+      const o = outlook.find((x) => x.t === t) || { remaining: 0, items: [], openBeanbag: false };
+      return {
+        t,
+        current: standings.total[t],
+        remaining: o.remaining,
+        max: standings.total[t] + o.remaining,
+        items: o.items,
+        openBeanbag: o.openBeanbag,
+      };
+    })
+    .sort((a, b) => b.current - a.current || b.max - a.max);
+
+  const leader = rows[0];
+  const bestOtherCurrent = (t) => Math.max(...rows.filter((r) => r.t !== t).map((r) => r.current));
+  const bestOtherMax = (t) => Math.max(...rows.filter((r) => r.t !== t).map((r) => r.max));
+  const nothingLeft = rows.every((r) => r.remaining === 0 && !r.openBeanbag);
+
+  const verdict = (r) => {
+    if (nothingLeft) {
+      return r.t === leader.t && r.current > bestOtherCurrent(r.t)
+        ? { label: "CHAMPION", tone: C.gold }
+        : { label: "\u2014", tone: C.dim };
+    }
+    // The bean bag deck is uncapped, so nothing is ever mathematically
+    // settled while it's still open.
+    if (!r.openBeanbag && r.max < bestOtherCurrent(r.t)) {
+      return { label: "OUT OF IT", tone: C.red };
+    }
+    if (!r.openBeanbag && r.current > bestOtherMax(r.t)) {
+      return { label: "CLINCHED", tone: C.gold };
+    }
+    const gap = leader.current - r.current;
+    if (gap === 0) return { label: "LEADING", tone: C.green };
+    return { label: `${gap} BACK`, tone: C.paper };
+  };
+
+  return (
+    <div>
+      <Eyebrow color={C.orange}>Road to victory</Eyebrow>
+      {rows.map((r) => {
+        const v = verdict(r);
+        const isOpen = openTeam === r.t;
+        const gap = leader.current - r.current;
+        const need = Math.min(r.remaining, gap + 1);
+        return (
+          <Panel key={r.t} style={{ marginBottom: 8, padding: 12 }}>
+            <button
+              onClick={() => setOpenTeam(isOpen ? null : r.t)}
+              style={{ width: "100%", background: "transparent", border: "none", padding: 0, textAlign: "left", color: C.paper }}
+            >
+              <div className="flex items-center justify-between">
+                <span style={{ color: TEAM_COLORS[r.t], fontWeight: 900, fontSize: 15 }}>
+                  {cfg.teams[r.t]}
+                </span>
+                <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: v.tone }}>
+                  {v.label}
+                </span>
+              </div>
+
+              <div className="flex items-center" style={{ gap: 14, marginTop: 6 }}>
+                {[
+                  ["BANKED", r.current, C.paper],
+                  ["LIVE", r.remaining, C.dim],
+                  ["CEILING", r.max, TEAM_COLORS[r.t]],
+                ].map(([label, val, colour]) => (
+                  <span key={label}>
+                    <span style={{ fontSize: 8, color: C.dim, fontWeight: 800, letterSpacing: "0.1em" }}>
+                      {label}{" "}
+                    </span>
+                    <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 900, color: colour }}>
+                      {val}
+                      {label === "CEILING" && r.openBeanbag ? "+" : ""}
+                    </span>
+                  </span>
+                ))}
+              </div>
+
+              {/* banked, then what's still reachable */}
+              <div style={{ height: 6, background: C.panel2, borderRadius: 3, overflow: "hidden", marginTop: 8, display: "flex" }}>
+                <div style={{ width: `${(r.current / 25) * 100}%`, background: TEAM_COLORS[r.t] }} />
+                <div style={{ width: `${(r.remaining / 25) * 100}%`, background: TEAM_COLORS[r.t], opacity: 0.28 }} />
+              </div>
+
+              <div style={{ fontSize: 11, color: C.dim, marginTop: 8, lineHeight: 1.5 }}>
+                {nothingLeft
+                  ? "Everything is in."
+                  : gap === 0
+                  ? `Top of the board with ${r.remaining} still live.`
+                  : r.max < bestOtherCurrent(r.t) && !r.openBeanbag
+                  ? "Can't be caught up — playing for pride."
+                  : `Needs ${need} of the ${r.remaining} still live to take the lead.`}
+                {r.items.length > 0 && (
+                  <span style={{ color: TEAM_COLORS[r.t], fontWeight: 700 }}>
+                    {" "}{isOpen ? "Hide" : `See all ${r.items.length}`}
+                  </span>
+                )}
+              </div>
+            </button>
+
+            {isOpen && r.items.length > 0 && (
+              <div style={{ marginTop: 10, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
+                {r.items.map((it, i) => (
+                  <div key={i} className="flex items-center justify-between" style={{ padding: "4px 0" }}>
+                    <span style={{ fontSize: 12, color: C.paper }}>{it.text}</span>
+                    <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 900, color: C.dim }}>
+                      +{it.pts}
+                    </span>
+                  </div>
+                ))}
+                {r.openBeanbag && (
+                  <div className="flex items-center justify-between" style={{ padding: "4px 0" }}>
+                    <span style={{ fontSize: 12, color: C.paper }}>Bean bag deck</span>
+                    <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 900, color: C.dim }}>
+                      +1 each
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </Panel>
+        );
+      })}
+      <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.6, marginTop: 4 }}>
+        Ceiling assumes a team wins everything it's still involved in. The bean bag
+        deck pays a point per made shot with no cap, so while it's open nobody is
+        mathematically safe — that's what the plus sign means.
+      </div>
+    </div>
+  );
+}
+
+function StandingsTab({ cfg, standings, feed = [], removeEmote, outlook = [] }) {
   const rows = [0, 1, 2, 3]
     .map((t) => ({ t, total: standings.total[t] }))
     .sort((a, b) => b.total - a.total);
@@ -2568,6 +2761,10 @@ function StandingsTab({ cfg, standings, feed = [], removeEmote }) {
           </div>
         ))}
       </Panel>
+
+      <div style={{ marginTop: 18 }}>
+        <RoadToVictory cfg={cfg} standings={standings} outlook={outlook} />
+      </div>
     </div>
   );
 }
