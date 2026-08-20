@@ -6,28 +6,62 @@ import "./styles.css";
    DADS WEEKEND 2026 — Tournament Scoring
    ============================================================ */
 
+/* Every value here is sampled from the DW26 mark. */
 const C = {
-  ink: "#14130E",
-  panel: "#1F1D16",
-  panel2: "#2A2720",
-  line: "#3A362C",
-  paper: "#F2EEE1",
-  dim: "#8E8878",
-  orange: "#E8890C",
-  red: "#D93B2B",
-  green: "#4B8F5E",
-  gold: "#C9A227",
+  ink: "#191C21",      // page
+  panel: "#22262C",    // the mark's own ground
+  panel2: "#2B3038",
+  line: "#39404A",
+  paper: "#F2F0EA",
+  dim: "#8B929C",
+  orange: "#F37021",   // the wordmark
+  red: "#E03127",
+  green: "#23A55F",
+  gold: "#F2A01F",
 };
 
-const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
+/* Four teams, four petals. Colour AND texture, because colour alone fails
+   in bright sun, at 20px, and for anyone colourblind. */
+const TEAM_COLORS = ["#F2A01F", "#E03127", "#23A55F", "#2B7FD4"];
+const TEAM_PATTERNS = ["grid", "binary", "chevron", "triangle"];
 
-/* Bump this with every change so the Connection panel shows which build
-   is actually live. */
-const APP_VERSION = "3.2 \u2014 road to victory";
+/* Each petal's pattern, redrawn as a tiling SVG so it stays crisp at any
+   size. Returned as a data URI for use as a CSS background. */
+function patternURI(kind, colour, alpha = 1) {
+  const c = encodeURIComponent(colour);
+  const a = alpha;
+  const tiles = {
+    grid: `<rect width='14' height='14' fill='none'/><path d='M0 .5h14M0 7.5h14M.5 0v14M7.5 0v14' stroke='${c}' stroke-opacity='${a}' stroke-width='1.4'/>`,
+    binary: `<text x='1' y='9' font-family='monospace' font-size='9' font-weight='700' fill='${c}' fill-opacity='${a}'>1</text><text x='8' y='16' font-family='monospace' font-size='9' font-weight='700' fill='${c}' fill-opacity='${a}'>0</text>`,
+    chevron: `<path d='M0 11l7-6 7 6M0 5l7-6 7 6' fill='none' stroke='${c}' stroke-opacity='${a}' stroke-width='2.6'/>`,
+    triangle: `<path d='M0 0h7v7z M7 7h7v7z' fill='${c}' fill-opacity='${a}'/>`,
+  };
+  const size = kind === "binary" ? 16 : 14;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'>${tiles[kind]}</svg>`;
+  return `url("data:image/svg+xml,${svg}")`;
+}
 
-const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-const DISPLAY =
-  "'Helvetica Neue', 'Arial Narrow', system-ui, -apple-system, sans-serif";
+/* Two strengths, both quiet. A solid fill carries the barest hint of
+   texture; a wash is texture only, sitting behind content. */
+function teamFill(t, { solid = false, alpha = 0.14 } = {}) {
+  const kind = TEAM_PATTERNS[t];
+  return solid
+    ? {
+        backgroundColor: TEAM_COLORS[t],
+        backgroundImage: patternURI(kind, "rgba(0,0,0,0.55)", 0.16),
+        backgroundRepeat: "repeat",
+      }
+    : {
+        backgroundImage: patternURI(kind, TEAM_COLORS[t], alpha),
+        backgroundRepeat: "repeat",
+      };
+}
+
+/* Plex Mono for every number — a scorecard is a grid of digits and they
+   have to line up. Fraunces carries the character, used sparingly. */
+const MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
+const SERIF = "'Fraunces Variable', 'Fraunces', Georgia, serif";
+const DISPLAY = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
 /* ============================================================
    COURSE DATA
@@ -462,8 +496,8 @@ function Eyebrow({ children, color }) {
     <div
       style={{
         color: color || C.dim,
-        fontSize: 11,
-        letterSpacing: "0.18em",
+        fontSize: 10,
+        letterSpacing: "0.2em",
         fontWeight: 800,
         textTransform: "uppercase",
         marginBottom: 8,
@@ -484,7 +518,7 @@ function Panel({ children, style }) {
 
 /* The signature element: the match tape. 18 cells that fill in as holes
    are entered, colored by which team took the hole. */
-function MatchTape({ result, colorA, colorB, current, muted }) {
+function MatchTape({ result, colorA, colorB, current, closedAt }) {
   const from = result.from || 0;
   const span = result.span || 18;
   return (
@@ -495,6 +529,9 @@ function MatchTape({ result, colorA, colorB, current, muted }) {
         const bg =
           w === "a" ? colorA : w === "b" ? colorB : w === "h" ? C.line : "transparent";
         const isVoid = w === "v";
+        // Holes played after the match was already closed out.
+        const dead = closedAt != null && i + 1 > closedAt;
+        const closer = closedAt != null && i + 1 === closedAt;
         return (
           <div
             key={i}
@@ -502,10 +539,12 @@ function MatchTape({ result, colorA, colorB, current, muted }) {
               flex: 1,
               height: 22,
               background: isVoid ? "transparent" : bg,
-              border: `1px ${isVoid ? "dashed" : "solid"} ${current === i ? C.paper : muted ? "rgba(0,0,0,0.25)" : C.line}`,
+              border: `1px ${isVoid ? "dashed" : "solid"} ${current === i ? C.paper : C.line}`,
               borderRadius: 2,
+              opacity: dead ? 0.28 : 1,
+              boxShadow: closer ? `inset 0 -2px 0 0 ${C.paper}` : "none",
               fontSize: 8,
-              color: isVoid ? C.dim : w ? C.ink : muted ? "rgba(0,0,0,0.55)" : C.dim,
+              color: isVoid ? C.dim : w ? C.ink : C.dim,
               fontFamily: MONO,
               display: "flex",
               alignItems: "center",
@@ -575,16 +614,29 @@ export default function App() {
       ...DEFAULT_CONFIG.players.map((p) => K.emotes(p.id)),
     ];
     const all = await store.getMany(keys);
-    const c = all[K.config];
+    const stored = all[K.config];
+    // A stored config may predate any field added since it was written, so
+    // fill every gap from the defaults rather than trusting its shape.
+    const c = stored
+      ? {
+          ...DEFAULT_CONFIG,
+          ...stored,
+          players: Array.isArray(stored.players) && stored.players.length ? stored.players : DEFAULT_CONFIG.players,
+          teams: Array.isArray(stored.teams) && stored.teams.length === 4 ? stored.teams : DEFAULT_CONFIG.teams,
+          rounds: Array.isArray(stored.rounds) && stored.rounds.length ? stored.rounds : DEFAULT_CONFIG.rounds,
+          matchups: stored.matchups && Object.keys(stored.matchups).length ? stored.matchups : DEFAULT_CONFIG.matchups,
+          scrambleAllowance: stored.scrambleAllowance || DEFAULT_CONFIG.scrambleAllowance,
+        }
+      : null;
     if (c) {
-      const points = { ...DEFAULT_CONFIG.points, ...(c.points || {}) };
+      const points = { ...DEFAULT_CONFIG.points, ...(stored.points || {}) };
       // A config saved before front/back matches existed put all 3 points on
       // the overall. Spread it across the three so a course still totals 9.
-      if (c.points && c.points.nineWin === undefined) {
+      if (stored.points && stored.points.nineWin === undefined) {
         points.matchWin = 1;
         points.nineWin = 1;
       }
-      setCfg((prev) => ({ ...prev, ...c, points }));
+      setCfg({ ...c, points });
     }
     const sc = {};
     for (const p of (c || DEFAULT_CONFIG).players) {
@@ -1141,16 +1193,30 @@ function IdentityGate({ cfg, current, onPick }) {
       background: C.ink, color: C.paper, fontFamily: DISPLAY,
       minHeight: "100vh", paddingBottom: 40,
     }}>
-      <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.02em", lineHeight: 1 }}>
-        DADS WEEKEND <span style={{ color: C.orange }}>2026</span>
-      </div>
-      <div style={{ fontSize: 10, color: C.dim, letterSpacing: "0.16em", marginTop: 5, fontWeight: 700 }}>
-        FOR ALL THE MUD HOLES
+      <div className="flex items-center" style={{ gap: 13 }}>
+        <img src="/icon-192.png" alt="" width="52" height="52" style={{ borderRadius: 13, display: "block" }} />
+        <div>
+          <div style={{
+            fontFamily: SERIF, fontSize: 27, lineHeight: 1,
+            fontVariationSettings: "'opsz' 72, 'wght' 700, 'SOFT' 30, 'WONK' 1",
+            letterSpacing: "-0.02em",
+          }}>
+            Dads Weekend <span style={{ color: C.orange }}>26</span>
+          </div>
+          <div style={{ fontSize: 9, color: C.dim, letterSpacing: "0.18em", marginTop: 5, fontWeight: 700 }}>
+            FOR ALL THE MUD HOLES
+          </div>
+        </div>
       </div>
 
-      <div style={{ height: 2, background: C.orange, margin: "16px 0 22px" }} />
+      <div style={{ height: 2, background: C.orange, margin: "20px 0 24px" }} />
 
-      <div style={{ fontSize: 17, fontWeight: 900, marginBottom: 4 }}>Who's on this phone?</div>
+      <div style={{
+        fontFamily: SERIF, fontSize: 21, marginBottom: 4,
+        fontVariationSettings: "'opsz' 36, 'wght' 600, 'SOFT' 40",
+      }}>
+        Who's on this phone?
+      </div>
       <div style={{ fontSize: 12, color: C.dim, marginBottom: 18, lineHeight: 1.5 }}>
         {current
           ? "Last time this phone was used it was " +
@@ -1165,17 +1231,35 @@ function IdentityGate({ cfg, current, onPick }) {
           return (
             <button key={p.id} onClick={() => onPick(p.id)}
               style={{
-                background: isMe ? TEAM_COLORS[p.team] : C.panel,
-                border: `2px solid ${TEAM_COLORS[p.team]}`,
-                borderRadius: 12, padding: "16px 14px", textAlign: "left",
-                color: isMe ? C.ink : C.paper,
+                background: C.panel,
+                border: `${isMe ? 2 : 1}px solid ${TEAM_COLORS[p.team]}`,
+                borderRadius: 12, padding: 0, textAlign: "left",
+                color: C.paper, overflow: "hidden",
               }}>
-              <div style={{ fontWeight: 900, fontSize: 18 }}>{p.name}</div>
+              {/* the team's texture as a header band — solid when this is you */}
               <div style={{
-                fontSize: 11, fontWeight: 700,
-                color: isMe ? "rgba(0,0,0,0.65)" : TEAM_COLORS[p.team],
-              }}>
-                {cfg.teams[p.team] || `Team ${p.team + 1}`} · idx {p.index}
+                height: isMe ? 30 : 22,
+                ...teamFill(p.team, isMe ? { solid: true } : { alpha: 0.3 }),
+                borderBottom: `1px solid ${isMe ? TEAM_COLORS[p.team] : C.line}`,
+              }} />
+              <div style={{ padding: "12px 14px 13px" }}>
+                <div className="flex items-center justify-between" style={{ gap: 6 }}>
+                  <span style={{
+                    fontFamily: SERIF, fontSize: 19, lineHeight: 1.1,
+                    fontVariationSettings: "'opsz' 30, 'wght' 650, 'SOFT' 40",
+                  }}>
+                    {p.name}
+                  </span>
+                  {isMe && (
+                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", color: TEAM_COLORS[p.team] }}>
+                      YOU
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginTop: 3, color: TEAM_COLORS[p.team] }}>
+                  {cfg.teams[p.team] || `Team ${p.team + 1}`}
+                  <span style={{ color: C.dim }}> · idx {p.index}</span>
+                </div>
               </div>
             </button>
           );
@@ -1220,12 +1304,20 @@ function Header({ cfg, me, setMe, syncing, lastSync, onSync, net = {}, onSetup, 
   return (
     <div className="app-header" style={{ background: C.ink, borderBottom: `2px solid ${C.orange}`, paddingBottom: 12 }}>
       <div className="flex items-center justify-between">
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em", lineHeight: 1 }}>
-            DADS WEEKEND <span style={{ color: C.orange }}>2026</span>
-          </div>
-          <div style={{ fontSize: 10, color: C.dim, letterSpacing: "0.16em", marginTop: 4, fontWeight: 700 }}>
-            FOR ALL THE MUD HOLES
+        <div className="flex items-center" style={{ gap: 11, minWidth: 0 }}>
+          <img src="/icon-192.png" alt="" width="34" height="34"
+            style={{ borderRadius: 9, flexShrink: 0, display: "block" }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{
+              fontFamily: SERIF, fontSize: 21, lineHeight: 1,
+              fontVariationSettings: "'opsz' 60, 'wght' 700, 'SOFT' 30, 'WONK' 1",
+              letterSpacing: "-0.015em",
+            }}>
+              Dads Weekend <span style={{ color: C.orange }}>26</span>
+            </div>
+            <div style={{ fontSize: 9, color: C.dim, letterSpacing: "0.18em", marginTop: 4, fontWeight: 700 }}>
+              FOR ALL THE MUD HOLES
+            </div>
           </div>
         </div>
         <div className="flex items-center" style={{ gap: 8 }}>
@@ -1479,15 +1571,34 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
       {/* hole header */}
       <Panel style={{ marginBottom: 12, padding: 0, overflow: "hidden" }}>
         <div className="flex items-stretch">
-          <button onClick={() => setHoleIdx(Math.max(0, hole - 1))} style={{ background: C.panel2, border: "none", color: C.paper, width: 48, fontSize: 22 }}>‹</button>
-          <div style={{ flex: 1, textAlign: "center", padding: "14px 0" }}>
-            <div style={{ fontSize: 10, color: C.dim, letterSpacing: "0.2em", fontWeight: 800 }}>HOLE</div>
-            <div style={{ fontSize: 44, fontWeight: 900, lineHeight: 1, fontFamily: MONO }}>{hole + 1}</div>
-            <div style={{ fontSize: 12, color: C.dim, marginTop: 4, fontFamily: MONO }}>
-              PAR {par} · {course.yards[hole] || "—"} YD · SI {si}
+          <button onClick={() => setHoleIdx(Math.max(0, hole - 1))} aria-label="Previous hole"
+            style={{ background: "transparent", border: "none", borderRight: `1px solid ${C.line}`, color: C.dim, width: 52, fontSize: 24 }}>‹</button>
+
+          <div style={{ flex: 1, textAlign: "center", padding: "12px 0 14px" }}>
+            <div style={{ fontSize: 9, color: C.dim, letterSpacing: "0.24em", fontWeight: 800 }}>HOLE</div>
+            <div style={{
+              fontFamily: SERIF, fontSize: 62, lineHeight: 0.94, marginTop: 2,
+              fontVariationSettings: "'opsz' 144, 'wght' 600, 'SOFT' 60, 'WONK' 1",
+              letterSpacing: "-0.03em",
+            }}>
+              {hole + 1}
+            </div>
+            <div className="flex items-center" style={{ justifyContent: "center", gap: 0, marginTop: 8 }}>
+              {[["PAR", par], ["YDS", course.yards[hole] || "—"], ["SI", si]].map(([k, v], i) => (
+                <span key={k} className="flex items-center" style={{ gap: 5, padding: "0 11px", borderLeft: i ? `1px solid ${C.line}` : "none" }}>
+                  <span style={{ fontSize: 8, color: C.dim, fontWeight: 800, letterSpacing: "0.12em" }}>{k}</span>
+                  <span className="num" style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, color: C.paper }}>{v}</span>
+                </span>
+              ))}
             </div>
           </div>
-          <button onClick={() => setHoleIdx(Math.min(17, hole + 1))} style={{ background: C.panel2, border: "none", color: C.paper, width: 48, fontSize: 22 }}>›</button>
+
+          <button onClick={() => setHoleIdx(Math.min(17, hole + 1))} aria-label="Next hole"
+            style={{ background: "transparent", border: "none", borderLeft: `1px solid ${C.line}`, color: C.dim, width: 52, fontSize: 24 }}>›</button>
+        </div>
+        {/* the hole's own progress across the round */}
+        <div style={{ height: 3, background: C.panel2, display: "flex" }}>
+          <div style={{ width: `${((hole + 1) / 18) * 100}%`, background: C.orange }} />
         </div>
       </Panel>
 
@@ -1518,9 +1629,16 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
                 borderRadius: 8, padding: "8px 10px", color: C.paper, textAlign: "left",
               }}
             >
+              {i === seat && (
+                <div style={{ height: 3, background: TEAM_COLORS[s.t] }} />
+              )}
+              <div style={{ padding: i === seat ? "7px 10px 8px" : "9px 10px" }}>
               <div className="flex items-center justify-between">
-                <span style={{ fontWeight: 800, fontSize: 13 }}>{label}</span>
-                <span style={{ fontFamily: MONO, fontSize: 16, fontWeight: 900, color: g == null ? C.line : isX ? C.dim : C.paper }}>
+                <span style={{
+                  fontFamily: SERIF, fontSize: 15, lineHeight: 1.1,
+                  fontVariationSettings: "'opsz' 24, 'wght' 620, 'SOFT' 40",
+                }}>{label}</span>
+                <span className="num" style={{ fontFamily: MONO, fontSize: 18, fontWeight: 600, color: g == null ? C.line : isX ? C.dim : C.paper }}>
                   {g == null ? "–" : `${showNet ? g - strokes : g}${isX ? "*" : ""}`}
                 </span>
               </div>
@@ -1530,6 +1648,7 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
                 fontWeight: strokes > 1 ? 900 : 700,
               }}>
                 {strokes === 0 ? "NO STROKE" : strokes === 1 ? "STROKE" : `${strokes} STROKES`}
+              </div>
               </div>
             </button>
           );
@@ -1568,11 +1687,14 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
               style={{
                 background: on ? TEAM_COLORS[current.t] : C.panel,
                 border: `1px solid ${on ? TEAM_COLORS[current.t] : C.line}`,
-                borderRadius: 10, padding: "12px 0", color: on ? C.ink : C.paper,
+                borderRadius: 10, padding: "12px 0", color: on ? "#14161A" : C.paper,
               }}
             >
-              <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 900, lineHeight: 1 }}>{v}</div>
-              <div style={{ fontSize: 9, opacity: 0.7, fontWeight: 700, marginTop: 3 }}>{names[rel] || ""}</div>
+              <div className="num" style={{ fontFamily: MONO, fontSize: 25, fontWeight: 600, lineHeight: 1 }}>{v}</div>
+              <div style={{
+                fontSize: 9, fontWeight: 800, marginTop: 4, letterSpacing: "0.05em",
+                color: on ? "rgba(0,0,0,0.66)" : C.dim,
+              }}>{names[rel] || ""}</div>
             </button>
           );
         })}
@@ -1958,7 +2080,7 @@ function ScoreMark({ gross, par, picked, stroke, dim }) {
   );
 
   const digits = (
-    <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 800, color: colour }}>
+    <span className="num" style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, color: colour }}>
       {gross}{picked ? "*" : ""}
     </span>
   );
@@ -2103,7 +2225,13 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
           {people.map((p) => (
             <span key={p.id} style={{ ...col, textAlign: "center" }}>
               <span style={{
-                display: "block", fontSize: 10, fontWeight: 900, color: TEAM_COLORS[p.team],
+                display: "block", width: "72%", height: 3, margin: "0 auto 4px",
+                borderRadius: 2, background: TEAM_COLORS[p.team],
+              }} />
+              <span style={{
+                display: "block", fontFamily: SERIF, fontSize: 12, lineHeight: 1.1,
+                fontVariationSettings: "'opsz' 20, 'wght' 640, 'SOFT' 40",
+                color: TEAM_COLORS[p.team],
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               }}>
                 {p.name}
@@ -2181,15 +2309,25 @@ function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
       <Eyebrow>Direct matches — front, back and overall</Eyebrow>
       {detail.matches.map((m, i) => (
         <Panel key={i} style={{ marginBottom: 10 }}>
-          <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
-            <span style={{ fontWeight: 900, fontSize: 14 }}>
-              <span style={{ color: TEAM_COLORS[m.ta] }}>{cfg.teams[m.ta]}</span>
-              <span style={{ color: C.dim }}> v </span>
-              <span style={{ color: TEAM_COLORS[m.tb] }}>{cfg.teams[m.tb]}</span>
-            </span>
-            <span style={{ fontSize: 13, fontWeight: 800 }}>
-              {statusText(m.overall, cfg.teams[m.ta], cfg.teams[m.tb])}
-            </span>
+          {/* Teams get their own line — names are long enough that a status
+              on the same row wraps into a mess. */}
+          <div className="flex items-center" style={{ gap: 8, marginBottom: 5 }}>
+            <span style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, ...teamFill(m.ta, { solid: true }) }} />
+            <span style={{
+              fontFamily: SERIF, fontSize: 16, lineHeight: 1.1, color: TEAM_COLORS[m.ta],
+              fontVariationSettings: "'opsz' 24, 'wght' 640, 'SOFT' 40",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>{cfg.teams[m.ta]}</span>
+            <span style={{ color: C.dim, fontSize: 13, fontStyle: "italic", fontFamily: SERIF, flexShrink: 0 }}>v</span>
+            <span style={{
+              fontFamily: SERIF, fontSize: 16, lineHeight: 1.1, color: TEAM_COLORS[m.tb],
+              fontVariationSettings: "'opsz' 24, 'wght' 640, 'SOFT' 40",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>{cfg.teams[m.tb]}</span>
+            <span style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, ...teamFill(m.tb, { solid: true }) }} />
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.dim, marginBottom: 9 }}>
+            {statusText(m.overall, cfg.teams[m.ta], cfg.teams[m.tb])}
           </div>
 
           <NineBox label="OVERALL 18" res={m.overall} m={m} cfg={cfg} worth={cfg.points.matchWin} />
@@ -2262,39 +2400,82 @@ function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
 
 /* Front and back share the row. Once a nine can't be caught, the whole
    box goes the winner's colour. */
+/* "3&2" — the Fraunces ampersand is far too decorative at this size, so
+   the numbers keep the serif and the connector drops to a quiet sans. */
+function Margin({ upBy, left, colour }) {
+  return (
+    <span style={{ color: colour, whiteSpace: "nowrap" }}>
+      <span style={{
+        fontFamily: SERIF, fontSize: 24, lineHeight: 1,
+        fontVariationSettings: "'opsz' 44, 'wght' 700, 'SOFT' 50",
+        letterSpacing: "-0.01em",
+      }}>{upBy}</span>
+      <span style={{ fontFamily: DISPLAY, fontSize: 13, fontWeight: 700, opacity: 0.6, margin: "0 3px" }}>&amp;</span>
+      <span style={{
+        fontFamily: SERIF, fontSize: 24, lineHeight: 1,
+        fontVariationSettings: "'opsz' 44, 'wght' 700, 'SOFT' 50",
+        letterSpacing: "-0.01em",
+      }}>{left}</span>
+    </span>
+  );
+}
+
 function NineBox({ label, res, m, cfg, worth, current = -1 }) {
   const won = res.decided ? (res.diff > 0 ? m.ta : m.tb) : null;
   const halved = res.complete && res.diff === 0;
-  const bg = won != null ? TEAM_COLORS[won] : halved ? C.panel2 : "transparent";
-  const fg = won != null ? C.ink : C.paper;
+  const colour = won != null ? TEAM_COLORS[won] : C.paper;
 
   return (
-    <div style={{
-      flex: 1, minWidth: 0, background: bg,
-      border: `1px solid ${won != null ? bg : C.line}`,
-      borderRadius: 10, padding: 8,
-    }}>
+    <div
+      className={won != null ? "won-tile" : undefined}
+      style={{
+        flex: 1, minWidth: 0,
+        /* The winner's texture sits behind the content, not over it. */
+        ...(won != null
+          ? { ...teamFill(won, { alpha: 0.09 }), backgroundColor: C.panel2 }
+          : { background: halved ? C.panel2 : "transparent" }),
+        border: `1px solid ${won != null ? colour : C.line}`,
+        borderRadius: 10, padding: 8,
+      }}
+    >
       <div className="flex items-center justify-between"
-        style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", marginBottom: 4, color: won != null ? "rgba(0,0,0,0.6)" : C.dim }}>
+        style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", marginBottom: 5, color: won != null ? colour : C.dim }}>
         <span>{label}</span>
         <span>{worth} PT</span>
       </div>
-      <MatchTape
-        result={res} muted={won != null}
-        colorA={won != null ? "rgba(0,0,0,0.35)" : TEAM_COLORS[m.ta]}
-        colorB={won != null ? "rgba(0,0,0,0.35)" : TEAM_COLORS[m.tb]}
-        current={current}
-      />
-      <div style={{ fontSize: 11, fontWeight: 800, marginTop: 6, color: fg, lineHeight: 1.3 }}>
-        {res.played === 0
-          ? "Not started"
-          : won != null
-          ? `${cfg.teams[won]} ${res.closed ? `${res.closed.upBy}&${res.closed.left}` : `by ${Math.abs(res.diff)}`}`
-          : halved
-          ? "Halved"
-          : res.diff === 0
-          ? "All square"
-          : `${cfg.teams[res.diff > 0 ? m.ta : m.tb]} ${Math.abs(res.diff)} up`}
+
+      {/* The holes stay visible whether it's live or done — that's the
+          record of how it was won. */}
+      <MatchTape result={res} colorA={TEAM_COLORS[m.ta]} colorB={TEAM_COLORS[m.tb]}
+        current={current} closedAt={res.closed ? res.closed.hole : null} />
+
+      <div className="flex items-center" style={{ gap: 8, marginTop: 7, minWidth: 0 }}>
+        {won != null && res.closed && (
+          <Margin upBy={res.closed.upBy} left={res.closed.left} colour={colour} />
+        )}
+        {won != null && !res.closed && (
+          <span style={{
+            fontFamily: SERIF, fontSize: 24, lineHeight: 1, color: colour,
+            fontVariationSettings: "'opsz' 44, 'wght' 700, 'SOFT' 50",
+          }}>
+            {Math.abs(res.diff)}<span style={{ fontFamily: DISPLAY, fontSize: 12, fontWeight: 700, marginLeft: 3 }}>up</span>
+          </span>
+        )}
+        <span style={{
+          fontSize: 11, fontWeight: 800, lineHeight: 1.3, minWidth: 0,
+          color: won != null ? colour : C.paper,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {won != null
+            ? cfg.teams[won]
+            : res.played === 0
+            ? "Not started"
+            : halved
+            ? "Halved"
+            : res.diff === 0
+            ? "All square"
+            : `${cfg.teams[res.diff > 0 ? m.ta : m.tb]} ${Math.abs(res.diff)} up`}
+        </span>
       </div>
     </div>
   );
@@ -2465,8 +2646,8 @@ function HallOfFame({ cfg, feed, removeEmote }) {
           <Panel style={{ marginBottom: 10 }}>
             <div className="flex" style={{ gap: 10 }}>
               {[
-                { row: mostRoasted, label: "Most roasted", sub: "reactions taken" },
-                { row: loudest, label: "Loudest mouth", sub: "reactions thrown" },
+                { row: mostRoasted, label: "Most roasted", sub: "taken" },
+                { row: loudest, label: "Loudest mouth", sub: "thrown" },
               ].map((x, i) =>
                 x.row ? (
                   <div key={i} style={{ flex: 1, minWidth: 0 }}>
@@ -2474,13 +2655,15 @@ function HallOfFame({ cfg, feed, removeEmote }) {
                       {x.label.toUpperCase()}
                     </div>
                     <div style={{
-                      fontSize: 18, fontWeight: 900, marginTop: 3,
+                      fontFamily: SERIF, fontSize: 20, lineHeight: 1.1, marginTop: 4,
+                      fontVariationSettings: "'opsz' 32, 'wght' 650, 'SOFT' 40",
                       color: TEAM_COLORS[(player(x.row.pid) || {}).team ?? 0],
                     }}>
                       {name(x.row.pid)}
                     </div>
-                    <div style={{ fontSize: 10, color: C.dim, fontFamily: MONO }}>
-                      {x.row.n} {x.sub}
+                    <div style={{ fontSize: 10, color: C.dim }}>
+                      <span className="num" style={{ fontFamily: MONO }}>{x.row.n}</span>{" "}
+                      {x.row.n === 1 ? "reaction" : "reactions"} {x.sub}
                     </div>
                   </div>
                 ) : null
@@ -2499,7 +2682,11 @@ function HallOfFame({ cfg, feed, removeEmote }) {
                     <div style={{ fontSize: 10, color: C.gold, fontWeight: 800, letterSpacing: "0.1em" }}>
                       {t.title.toUpperCase()}
                     </div>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: TEAM_COLORS[(p || {}).team ?? 0] }}>
+                    <div style={{
+                      fontFamily: SERIF, fontSize: 17, lineHeight: 1.1,
+                      fontVariationSettings: "'opsz' 28, 'wght' 650, 'SOFT' 40",
+                      color: TEAM_COLORS[(p || {}).team ?? 0],
+                    }}>
                       {name(t.pid)}
                     </div>
                     <div style={{ fontSize: 11, color: C.dim }}>{t.blurb}</div>
@@ -2630,7 +2817,10 @@ function RoadToVictory({ cfg, standings, outlook }) {
               style={{ width: "100%", background: "transparent", border: "none", padding: 0, textAlign: "left", color: C.paper }}
             >
               <div className="flex items-center justify-between">
-                <span style={{ color: TEAM_COLORS[r.t], fontWeight: 900, fontSize: 15 }}>
+                <span style={{
+                  color: TEAM_COLORS[r.t], fontFamily: SERIF, fontSize: 17, lineHeight: 1.1,
+                  fontVariationSettings: "'opsz' 28, 'wght' 650, 'SOFT' 40",
+                }}>
                   {cfg.teams[r.t]}
                 </span>
                 <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: v.tone }}>
@@ -2657,9 +2847,9 @@ function RoadToVictory({ cfg, standings, outlook }) {
               </div>
 
               {/* banked, then what's still reachable */}
-              <div style={{ height: 6, background: C.panel2, borderRadius: 3, overflow: "hidden", marginTop: 8, display: "flex" }}>
-                <div style={{ width: `${(r.current / 25) * 100}%`, background: TEAM_COLORS[r.t] }} />
-                <div style={{ width: `${(r.remaining / 25) * 100}%`, background: TEAM_COLORS[r.t], opacity: 0.28 }} />
+              <div style={{ height: 8, background: C.panel2, borderRadius: 4, overflow: "hidden", marginTop: 9, display: "flex" }}>
+                <div style={{ width: `${(r.current / 25) * 100}%`, ...teamFill(r.t, { solid: true }) }} />
+                <div style={{ width: `${(r.remaining / 25) * 100}%`, ...teamFill(r.t, { solid: true }), opacity: 0.26 }} />
               </div>
 
               <div style={{ fontSize: 11, color: C.dim, marginTop: 8, lineHeight: 1.5 }}>
@@ -2722,18 +2912,32 @@ function StandingsTab({ cfg, standings, feed = [], removeEmote, outlook = [] }) 
       <Panel style={{ marginBottom: 16 }}>
         {rows.map((r, i) => (
           <div key={r.t} style={{ padding: "10px 0", borderBottom: i < 3 ? `1px solid ${C.line}` : "none" }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-              <div className="flex items-center" style={{ gap: 10 }}>
-                <span style={{ fontFamily: MONO, fontSize: 13, color: i === 0 ? C.gold : C.dim, fontWeight: 900 }}>{i + 1}</span>
-                <span style={{ color: TEAM_COLORS[r.t], fontWeight: 900, fontSize: 16 }}>{cfg.teams[r.t]}</span>
-                <span style={{ fontSize: 10, color: C.dim }}>
-                  {cfg.players.filter((p) => p.team === r.t).map((p) => p.name).join(" · ")}
+            <div className="flex items-center justify-between" style={{ marginBottom: 7 }}>
+              <div className="flex items-center" style={{ gap: 10, minWidth: 0 }}>
+                <span className="num" style={{ fontFamily: MONO, fontSize: 12, color: i === 0 ? C.gold : C.dim, fontWeight: 600 }}>
+                  {i + 1}
                 </span>
+                <span style={{
+                  width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                  border: `1px solid ${TEAM_COLORS[r.t]}`, ...teamFill(r.t, { solid: true }),
+                }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    color: TEAM_COLORS[r.t], fontFamily: SERIF, fontSize: 17, lineHeight: 1.1,
+                    fontVariationSettings: "'opsz' 30, 'wght' 650, 'SOFT' 40",
+                  }}>
+                    {cfg.teams[r.t]}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.dim, marginTop: 1 }}>
+                    {cfg.players.filter((p) => p.team === r.t).map((p) => p.name).join(" · ")}
+                  </div>
+                </div>
               </div>
-              <span style={{ fontFamily: MONO, fontSize: 22, fontWeight: 900 }}>{r.total}</span>
+              <span className="num" style={{ fontFamily: MONO, fontSize: 24, fontWeight: 600 }}>{r.total}</span>
             </div>
-            <div style={{ height: 6, background: C.panel2, borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ width: `${(r.total / max) * 100}%`, height: "100%", background: TEAM_COLORS[r.t] }} />
+            {/* the quilt: banked points shown in the team's own texture */}
+            <div style={{ height: 9, background: C.panel2, borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ width: `${(r.total / max) * 100}%`, height: "100%", ...teamFill(r.t, { solid: true }) }} />
             </div>
           </div>
         ))}
