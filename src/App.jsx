@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "2.9 \u2014 stroke in team colour";
+const APP_VERSION = "3.0 \u2014 stroke in team colour";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -2053,7 +2053,10 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
               }}>
                 {p.name}
               </span>
-              <span style={{ display: "block", fontSize: 9, color: C.green, fontFamily: MONO, fontWeight: 800 }}>
+              <span style={{
+                display: "block", fontSize: 9, fontFamily: MONO, fontWeight: 800,
+                color: chFor(p, course) > 0 ? TEAM_COLORS[p.team] : C.dim,
+              }}>
                 {chFor(p, course)} str
               </span>
             </span>
@@ -2090,8 +2093,8 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
           Shapes read against par. The small orange mark means a stroke is received
           on that hole — a dot for one, a number for two — and it stays visible in
           both views so you can always see where the shots fall. An asterisk means
-          the ball was picked up. The green number under each name is that player's
-          course handicap here.
+          the ball was picked up. The number under each name is that player's course
+          handicap here, in their team colour.
         </div>
       </Panel>
     </div>
