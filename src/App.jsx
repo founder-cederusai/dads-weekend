@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "3.0 \u2014 stroke in team colour";
+const APP_VERSION = "3.1 \u2014 for all the mud holes";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -1090,7 +1090,7 @@ function IdentityGate({ cfg, current, onPick }) {
         DADS WEEKEND <span style={{ color: C.orange }}>2026</span>
       </div>
       <div style={{ fontSize: 10, color: C.dim, letterSpacing: "0.16em", marginTop: 5, fontWeight: 700 }}>
-        THREE COURSES · FOUR TEAMS · ONE CHAMPION
+        FOR ALL THE MUD HOLES
       </div>
 
       <div style={{ height: 2, background: C.orange, margin: "16px 0 22px" }} />
@@ -1170,7 +1170,7 @@ function Header({ cfg, me, setMe, syncing, lastSync, onSync, net = {}, onSetup, 
             DADS WEEKEND <span style={{ color: C.orange }}>2026</span>
           </div>
           <div style={{ fontSize: 10, color: C.dim, letterSpacing: "0.16em", marginTop: 4, fontWeight: 700 }}>
-            THREE COURSES · FOUR TEAMS · ONE CHAMPION
+            FOR ALL THE MUD HOLES
           </div>
         </div>
         <div className="flex items-center" style={{ gap: 8 }}>
