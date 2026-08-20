@@ -1,6 +1,6 @@
 /* Cache the shell so the app opens in a dead zone. Scores live in
    localStorage and flush to Supabase when signal returns. */
-const CACHE = "dw26-v1";
+const CACHE = "dw26-v2";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/index.html", "/manifest.webmanifest"])));
