@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "2.8 \u2014 new nav icons";
+const APP_VERSION = "2.9 \u2014 stroke in team colour";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -1471,7 +1471,7 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
               </div>
               <div style={{
                 fontSize: 10, letterSpacing: "0.06em",
-                color: strokes > 0 ? C.green : TEAM_COLORS[s.t],
+                color: strokes > 0 ? TEAM_COLORS[s.t] : C.dim,
                 fontWeight: strokes > 1 ? 900 : 700,
               }}>
                 {strokes === 0 ? "NO STROKE" : strokes === 1 ? "STROKE" : `${strokes} STROKES`}
@@ -1675,7 +1675,7 @@ function OtherGroupHole({ cfg, round, course, pair, hole, scores, teamScores, ch
               </div>
               <div style={{
                 fontSize: 8, letterSpacing: "0.05em", marginTop: 1,
-                color: c.strokes > 0 ? C.green : TEAM_COLORS[c.team],
+                color: c.strokes > 0 ? TEAM_COLORS[c.team] : C.dim,
                 fontWeight: c.strokes > 1 ? 900 : 700,
               }}>
                 {c.strokes === 0 ? "NO STROKE" : c.strokes === 1 ? "STROKE" : `${c.strokes} STROKES`}
