@@ -23,7 +23,7 @@ const TEAM_COLORS = ["#E8890C", "#D93B2B", "#4B8F5E", "#5B92C4"];
 
 /* Bump this with every change so the Connection panel shows which build
    is actually live. */
-const APP_VERSION = "2.6 \u2014 other group hole scores";
+const APP_VERSION = "2.7 \u2014 net/gross toggle, DW26 icon";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 const DISPLAY =
@@ -416,6 +416,24 @@ const gx = (cell) => Boolean(cell && typeof cell === "object" && cell.x);
    SMALL UI PIECES
    ============================================================ */
 
+/* One control, used on both the entry screen and the card. */
+function NetToggle({ showNet, setShowNet }) {
+  return (
+    <div className="flex" style={{ gap: 0, border: `1px solid ${C.line}`, borderRadius: 8, overflow: "hidden" }}>
+      {[["NET", true], ["GROSS", false]].map(([label, val]) => (
+        <button key={label} onClick={() => setShowNet(val)}
+          style={{
+            padding: "6px 12px", border: "none", fontSize: 10, fontWeight: 900, letterSpacing: "0.08em",
+            background: showNet === val ? C.orange : "transparent",
+            color: showNet === val ? C.ink : C.dim,
+          }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Btn({ children, onClick, active, tone, style, disabled }) {
   const bg = active ? (tone || C.orange) : C.panel2;
   return (
@@ -534,6 +552,9 @@ export default function App() {
   // Where this phone left off, per round. Local only — everyone plays at
   // their own pace.
   const [pos, setPos] = useState(() => store.getLocal("dw26:pos", {}));
+  // Net is the competition, so it leads. Gross is a tap away.
+  const [showNet, setShowNetRaw] = useState(() => store.getLocal("dw26:net", true));
+  const setShowNet = useCallback((v) => { setShowNetRaw(v); store.setLocal("dw26:net", v); }, []);
   const [loading, setLoading] = useState(true);
   const [resumed, setResumed] = useState(false);
   // Asked once per launch. A phone that gets handed around shouldn't
@@ -977,7 +998,8 @@ export default function App() {
   };
 
   return (
-    <div className="app-body" style={{ background: C.ink, minHeight: "100vh", color: C.paper, fontFamily: DISPLAY }}>
+    <div className="app-shell">
+    <div className="app-body" style={{ background: C.ink, color: C.paper, fontFamily: DISPLAY }}>
       <Header cfg={view} me={me}
         setMe={(v) => { setMe(v); store.setMe(v); }}
         syncing={syncing} lastSync={lastSync} onSync={pull} net={net}
@@ -996,12 +1018,14 @@ export default function App() {
             teamNetsBestBall={teamNetsBestBall} teamScrambleNets={teamScrambleNets}
             sendEmote={sendEmote} feed={feed} removeEmote={removeEmote}
             hole={pos[round.id] ?? 0} setHolePos={setHolePos}
+            showNet={showNet} setShowNet={setShowNet}
           />
         )}
         {tab === "card" && (
           <CardTab cfg={view} round={round} setActiveRound={setActiveRound}
             course={resolveCourse(round)} scores={scores} teamScores={teamScores}
-            chFor={chFor} xsFor={xsFor} me={me} />
+            chFor={chFor} xsFor={xsFor} me={me}
+            showNet={showNet} setShowNet={setShowNet} />
         )}
         {tab === "board" && (
           <BoardTab cfg={view} roundPoints={roundPoints} activeRound={activeRound} setActiveRound={setActiveRound} />
@@ -1017,7 +1041,8 @@ export default function App() {
       </div>
 
       <EmotePopup popup={popup} cfg={view} />
-      <TabBar tab={tab} setTab={setTab} />
+    </div>
+    <TabBar tab={tab} setTab={setTab} />
     </div>
   );
 }
@@ -1153,13 +1178,15 @@ function Header({ cfg, me, setMe, syncing, lastSync, onSync, net = {}, onSetup, 
           onClick={onSetup}
           aria-label="Setup"
           style={{
-            background: setupOpen ? C.orange : "transparent",
-            border: `1px solid ${setupOpen ? C.orange : C.line}`,
-            borderRadius: 8, padding: "6px 9px",
-            color: setupOpen ? C.ink : C.dim, lineHeight: 0,
+            background: "transparent", border: "none",
+            padding: 4, color: setupOpen ? C.orange : C.dim, lineHeight: 0,
           }}
         >
-          <TabIcon name="setup" />
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.9 1.9M16.8 16.8l1.9 1.9M18.7 5.3l-1.9 1.9M7.2 16.8l-1.9 1.9" />
+          </svg>
         </button>
         <button
           onClick={tapRefresh}
@@ -1327,7 +1354,7 @@ function TabBar({ tab, setTab }) {
    ENTRY
    ============================================================ */
 
-function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamScores, setHole, setTeamHole, chFor, netsFor, xsFor, teamNetsBestBall, teamScrambleNets, sendEmote, feed, removeEmote, hole, setHolePos }) {
+function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamScores, setHole, setTeamHole, chFor, netsFor, xsFor, teamNetsBestBall, teamScrambleNets, sendEmote, feed, removeEmote, hole, setHolePos, showNet, setShowNet }) {
   const [seat, setSeatRaw] = useState(0);
   const [seatTouched, setSeatTouched] = useState(false);
   const [emoteOpen, setEmoteOpen] = useState(false);
@@ -1377,7 +1404,6 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
   const enterPickup = () => enter({ g: par + 2, x: true });
 
   const chOf = (p) => chFor(p, course);
-  const dots = (n) => "•".repeat(Math.min(n, 4));
 
   return (
     <div>
@@ -1414,6 +1440,11 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
         </div>
       </Panel>
 
+      <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+        <Eyebrow>Hole {hole + 1} scores</Eyebrow>
+        <NetToggle showNet={showNet} setShowNet={setShowNet} />
+      </div>
+
       {/* seat selector */}
       <div className="flex" style={{ gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         {seats.map((s, i) => {
@@ -1439,11 +1470,15 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
               <div className="flex items-center justify-between">
                 <span style={{ fontWeight: 800, fontSize: 13 }}>{label}</span>
                 <span style={{ fontFamily: MONO, fontSize: 16, fontWeight: 900, color: g == null ? C.line : isX ? C.dim : C.paper }}>
-                  {g == null ? "–" : isX ? `${g}*` : g}
+                  {g == null ? "–" : `${showNet ? g - strokes : g}${isX ? "*" : ""}`}
                 </span>
               </div>
-              <div style={{ fontSize: 10, color: TEAM_COLORS[s.t], fontWeight: 700 }}>
-                {strokes > 0 ? dots(strokes) : "no stroke"}
+              <div style={{
+                fontSize: 10, letterSpacing: "0.06em",
+                color: strokes > 0 ? C.green : TEAM_COLORS[s.t],
+                fontWeight: strokes > 1 ? 900 : 700,
+              }}>
+                {strokes === 0 ? "NO STROKE" : strokes === 1 ? "STROKE" : `${strokes} STROKES`}
               </div>
             </button>
           );
@@ -1454,13 +1489,13 @@ function PlayTab({ cfg, round, setActiveRound, course, me, setMe, scores, teamSc
         <OtherGroupHole
           cfg={cfg} round={round} course={course} pair={otherMatch} hole={hole}
           scores={scores} teamScores={teamScores} chFor={chFor}
-          teamScrambleNets={teamScrambleNets}
+          teamScrambleNets={teamScrambleNets} showNet={showNet}
         />
       )}
 
       {/* the pad */}
       <Eyebrow color={TEAM_COLORS[current.t]}>
-        {current.kind === "team" ? `${cfg.teams[current.t]} scramble score` : `${current.p.name}'s score`}
+        {current.kind === "team" ? `${cfg.teams[current.t]} scramble` : `${current.p.name}`} — enter gross
       </Eyebrow>
       <div className="grid grid-cols-4" style={{ gap: 8 }}>
         {[par - 2, par - 1, par, par + 1, par + 2, par + 3, par + 4, null].map((v, i) => {
@@ -1594,7 +1629,7 @@ function SwipeRow({ children, onDelete, last }) {
 
 /* Just what the other group made on this hole. Their match, nines and
    running status all live on the Matches tab. */
-function OtherGroupHole({ cfg, round, course, pair, hole, scores, teamScores, chFor, teamScrambleNets }) {
+function OtherGroupHole({ cfg, round, course, pair, hole, scores, teamScores, chFor, teamScrambleNets, showNet }) {
   const scramble = round.format === "scramble";
   const si = course.si[hole];
 
@@ -1624,7 +1659,7 @@ function OtherGroupHole({ cfg, round, course, pair, hole, scores, teamScores, ch
         fontSize: 9, color: C.dim, fontWeight: 800,
         letterSpacing: "0.12em", marginBottom: 5,
       }}>
-        OTHER GROUP · HOLE {hole + 1}
+        OTHER GROUP · HOLE {hole + 1} · {showNet ? "NET" : "GROSS"}
       </div>
       <div className="flex" style={{ gap: 6 }}>
         {cells.map((c) => {
@@ -1641,17 +1676,19 @@ function OtherGroupHole({ cfg, round, course, pair, hole, scores, teamScores, ch
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               }}>
                 {c.label}
-                {c.strokes > 0 && (
-                  <span style={{ color: C.orange, marginLeft: 3 }}>
-                    {c.strokes > 1 ? c.strokes : "\u2022"}
-                  </span>
-                )}
+              </div>
+              <div style={{
+                fontSize: 8, letterSpacing: "0.05em", marginTop: 1,
+                color: c.strokes > 0 ? C.green : TEAM_COLORS[c.team],
+                fontWeight: c.strokes > 1 ? 900 : 700,
+              }}>
+                {c.strokes === 0 ? "NO STROKE" : c.strokes === 1 ? "STROKE" : `${c.strokes} STROKES`}
               </div>
               <div style={{
                 fontFamily: MONO, fontSize: 17, fontWeight: 900, marginTop: 1,
                 color: g == null ? C.line : C.paper,
               }}>
-                {g == null ? "\u2013" : `${g}${gx(c.cell) ? "*" : ""}`}
+                {g == null ? "\u2013" : `${showNet ? g - c.strokes : g}${gx(c.cell) ? "*" : ""}`}
               </div>
             </div>
           );
@@ -1789,7 +1826,8 @@ function LiveMatch({ cfg, round, course, ta, tb, hole, netsFor, xsFor, teamNetsB
           {statusText(overall, cfg.teams[ta], cfg.teams[tb])}
         </div>
       </div>
-      <MatchTape result={overall} colorA={TEAM_COLORS[ta]} colorB={TEAM_COLORS[tb]} current={hole} />
+      <NineBox label="OVERALL 18" res={overall} m={m} cfg={cfg}
+        worth={cfg.points.matchWin} current={hole} />
       {!compact && (
         <div className="flex" style={{ gap: 8, marginTop: 10 }}>
           <NineBox label="FRONT" res={seg(0, 9)} m={m} cfg={cfg} worth={cfg.points.nineWin} />
@@ -1889,7 +1927,7 @@ function ScoreMark({ gross, par, picked, stroke, dim }) {
   );
 }
 
-function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor, xsFor, me }) {
+function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor, xsFor, me, showNet, setShowNet }) {
   const myTeam = (cfg.players.find((p) => p.id === me) || {}).team ?? 0;
   const pairs = cfg.matchups[round.id] || [];
   const myPairIdx = Math.max(0, pairs.findIndex((pr) => pr.includes(myTeam)));
@@ -1900,12 +1938,13 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
   const cardOf = (pid) => (scores[pid] || {})[round.id] || [];
   const strokesFor = (p, i) => strokesOnHole(chFor(p, course), course.si[i]);
 
-  const sum = (pid, from, to) => {
+  const sum = (pid, from, to, net) => {
+    const p = cfg.players.find((x) => x.id === pid);
     const card = cardOf(pid);
     let total = 0, any = false;
     for (let i = from; i < to; i++) {
       const v = gv(card[i]);
-      if (v != null) { total += v; any = true; }
+      if (v != null) { total += net ? v - strokesFor(p, i) : v; any = true; }
     }
     return any ? total : null;
   };
@@ -1931,10 +1970,16 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
       {people.map((p) => (
         <span key={p.id} style={{ ...col, textAlign: "center" }}>
           <ScoreMark
-            gross={gv(cardOf(p.id)[i])}
+            gross={
+              gv(cardOf(p.id)[i]) == null
+                ? null
+                : showNet
+                ? gv(cardOf(p.id)[i]) - strokesFor(p, i)
+                : gv(cardOf(p.id)[i])
+            }
             picked={gx(cardOf(p.id)[i])}
             par={course.par[i]}
-            stroke={strokesFor(p, i)}
+            stroke={showNet ? 0 : strokesFor(p, i)}
             dim={p.team !== myTeam}
           />
         </span>
@@ -1942,7 +1987,7 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
     </div>
   );
 
-  const totalRow = (label, from, to, strong) => (
+  const totalRow = (label, from, to, strong, net = showNet) => (
     <div key={label} className="flex items-center" style={{
       padding: "8px 0",
       borderBottom: `1px solid ${C.line}`,
@@ -1956,7 +2001,7 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
       </span>
       <span style={{ width: "13%" }} />
       {people.map((p) => {
-        const t = sum(p.id, from, to);
+        const t = sum(p.id, from, to, net);
         return (
           <span key={p.id} style={{
             ...col, textAlign: "center", fontFamily: MONO,
@@ -1992,8 +2037,11 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: C.dim, marginBottom: 10 }}>
-        {course.name} · par {coursePar(course.par)}
+      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+        <span style={{ fontSize: 11, color: C.dim }}>
+          {course.name} · par {coursePar(course.par)}
+        </span>
+        <NetToggle showNet={showNet} setShowNet={setShowNet} />
       </div>
 
       <Panel style={{ padding: "0 12px" }}>
@@ -2002,11 +2050,16 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
           <span style={{ width: "13%", fontSize: 9, color: C.dim, fontWeight: 800 }}>PAR</span>
           <span style={{ width: "13%", fontSize: 9, color: C.dim, fontWeight: 800 }}>SI</span>
           {people.map((p) => (
-            <span key={p.id} style={{
-              ...col, textAlign: "center", fontSize: 10, fontWeight: 900,
-              color: TEAM_COLORS[p.team], overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>
-              {p.name}
+            <span key={p.id} style={{ ...col, textAlign: "center" }}>
+              <span style={{
+                display: "block", fontSize: 10, fontWeight: 900, color: TEAM_COLORS[p.team],
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>
+                {p.name}
+              </span>
+              <span style={{ display: "block", fontSize: 9, color: C.green, fontFamily: MONO, fontWeight: 800 }}>
+                {chFor(p, course)} str
+              </span>
             </span>
           ))}
         </div>
@@ -2015,7 +2068,8 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
         {totalRow("OUT", 0, 9)}
         {Array.from({ length: 9 }, (_, i) => holeRow(i + 9))}
         {totalRow("IN", 9, 18)}
-        {totalRow("TOTAL", 0, 18, true)}
+        {totalRow(showNet ? "NET TOTAL" : "GROSS TOTAL", 0, 18, true)}
+        {totalRow(showNet ? "GROSS TOTAL" : "NET TOTAL", 0, 18, false, !showNet)}
       </Panel>
 
       <Panel style={{ marginTop: 12 }}>
@@ -2037,8 +2091,10 @@ function CardTab({ cfg, round, setActiveRound, course, scores, teamScores, chFor
           ))}
         </div>
         <div style={{ fontSize: 11, color: C.dim, marginTop: 10, lineHeight: 1.6 }}>
-          The small orange mark is a stroke received on that hole — a dot for one,
-          a number for two. An asterisk means the ball was picked up.
+          Shapes read against par. In GROSS view the small orange mark shows strokes
+          received on that hole; in NET view they're already taken off. An asterisk
+          means the ball was picked up. The number under each name is that player's
+          course handicap here.
         </div>
       </Panel>
     </div>
@@ -2081,12 +2137,7 @@ function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
             </span>
           </div>
 
-          <div className="flex items-center justify-between"
-            style={{ fontSize: 9, color: C.dim, fontWeight: 800, letterSpacing: "0.1em", marginBottom: 4 }}>
-            <span>OVERALL</span>
-            <span>{cfg.points.matchWin} PT</span>
-          </div>
-          <MatchTape result={m.overall} colorA={TEAM_COLORS[m.ta]} colorB={TEAM_COLORS[m.tb]} current={-1} />
+          <NineBox label="OVERALL 18" res={m.overall} m={m} cfg={cfg} worth={cfg.points.matchWin} />
 
           <div className="flex" style={{ gap: 8, marginTop: 10 }}>
             <NineBox label="FRONT" res={m.front} m={m} cfg={cfg} worth={cfg.points.nineWin} />
@@ -2156,7 +2207,7 @@ function BoardTab({ cfg, roundPoints, activeRound, setActiveRound }) {
 
 /* Front and back share the row. Once a nine can't be caught, the whole
    box goes the winner's colour. */
-function NineBox({ label, res, m, cfg, worth }) {
+function NineBox({ label, res, m, cfg, worth, current = -1 }) {
   const won = res.decided ? (res.diff > 0 ? m.ta : m.tb) : null;
   const halved = res.complete && res.diff === 0;
   const bg = won != null ? TEAM_COLORS[won] : halved ? C.panel2 : "transparent";
@@ -2177,7 +2228,7 @@ function NineBox({ label, res, m, cfg, worth }) {
         result={res} muted={won != null}
         colorA={won != null ? "rgba(0,0,0,0.35)" : TEAM_COLORS[m.ta]}
         colorB={won != null ? "rgba(0,0,0,0.35)" : TEAM_COLORS[m.tb]}
-        current={-1}
+        current={current}
       />
       <div style={{ fontSize: 11, fontWeight: 800, marginTop: 6, color: fg, lineHeight: 1.3 }}>
         {res.played === 0
